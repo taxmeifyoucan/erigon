@@ -69,7 +69,7 @@ func reportWithFlags(ctx context.Context, flags reports.CommandFlags) error {
 	if err != nil {
 		return err
 	}
-	clientsReport, err := reports.CreateClientsReport(ctx, db)
+	clientsReport, err := reports.CreateClientsReport(ctx, db, flags.ClientsLimit)
 	if err != nil {
 		return err
 	}

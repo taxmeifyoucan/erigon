@@ -4,10 +4,12 @@ import (
 	"context"
 	"github.com/ledgerwatch/erigon/cmd/utils"
 	"github.com/spf13/cobra"
+	"github.com/urfave/cli"
 )
 
 type CommandFlags struct {
-	DataDir string
+	DataDir      string
+	ClientsLimit uint
 }
 
 type Command struct {
@@ -25,6 +27,7 @@ func NewCommand() *Command {
 		command: command,
 	}
 	instance.withDatadir()
+	instance.withClientsLimit()
 
 	return &instance
 }
@@ -33,6 +36,15 @@ func (command *Command) withDatadir() {
 	flag := utils.DataDirFlag
 	command.command.Flags().StringVar(&command.flags.DataDir, flag.Name, flag.Value.String(), flag.Usage)
 	must(command.command.MarkFlagDirname(utils.DataDirFlag.Name))
+}
+
+func (command *Command) withClientsLimit() {
+	flag := cli.UintFlag{
+		Name:  "clients-limit",
+		Usage: "A number of top clients to show",
+		Value: uint(10),
+	}
+	command.command.Flags().UintVar(&command.flags.ClientsLimit, flag.Name, flag.Value, flag.Usage)
 }
 
 func (command *Command) RawCommand() *cobra.Command {

@@ -17,7 +17,7 @@ type ClientsReport struct {
 	Clients []ClientsReportEntry
 }
 
-func CreateClientsReport(ctx context.Context, db database.DB) (*ClientsReport, error) {
+func CreateClientsReport(ctx context.Context, db database.DB, limit uint) (*ClientsReport, error) {
 	groups := make(map[string]uint)
 	knownCount := uint(0)
 	unknownCount := uint(0)
@@ -41,7 +41,7 @@ func CreateClientsReport(ctx context.Context, db database.DB) (*ClientsReport, e
 
 	report := ClientsReport{}
 
-	for i := 0; i < 10; i++ {
+	for i := uint(0); i < limit; i++ {
 		clientName, count := takeMapMaxValue(groups)
 		if count == 0 {
 			break
