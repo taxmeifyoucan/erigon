@@ -31,6 +31,7 @@ type CrawlerConfig struct {
 	PrivateKey       *ecdsa.PrivateKey
 	ConcurrencyLimit uint
 	RefreshTimeout   time.Duration
+	StatusLogPeriod  time.Duration
 
 	HandshakeRefreshTimeout time.Duration
 	MaxHandshakeTries       uint
@@ -61,6 +62,7 @@ func NewCrawler(
 		config.HandshakeRefreshTimeout,
 		1*time.Hour,
 		config.MaxHandshakeTries,
+		config.StatusLogPeriod,
 		logger)
 
 	instance := Crawler{
@@ -166,7 +168,7 @@ func (crawler *Crawler) Run(ctx context.Context) error {
 		}
 
 		crawledCount++
-		if time.Since(crawledCountLogDate) > 10*time.Second {
+		if time.Since(crawledCountLogDate) > crawler.config.StatusLogPeriod {
 			foundPeersCount := atomic.LoadUint64(foundPeersCountPtr)
 			crawler.log.Info("Crawling", "crawledCount", crawledCount, "foundPeersCount", foundPeersCount)
 			crawledCountLogDate = time.Now()

@@ -22,7 +22,8 @@ type Diplomacy struct {
 	retryTimeout      time.Duration
 	maxHandshakeTries uint
 
-	log log.Logger
+	statusLogPeriod time.Duration
+	log             log.Logger
 }
 
 func NewDiplomacy(
@@ -32,6 +33,7 @@ func NewDiplomacy(
 	refreshTimeout time.Duration,
 	retryTimeout time.Duration,
 	maxHandshakeTries uint,
+	statusLogPeriod time.Duration,
 	logger log.Logger,
 ) *Diplomacy {
 	instance := Diplomacy{
@@ -41,6 +43,7 @@ func NewDiplomacy(
 		refreshTimeout,
 		retryTimeout,
 		maxHandshakeTries,
+		statusLogPeriod,
 		logger,
 	}
 	return &instance
@@ -108,7 +111,7 @@ func (diplomacy *Diplomacy) Run(ctx context.Context) error {
 		}
 
 		count++
-		if time.Since(statusLogDate) > 10*time.Second {
+		if time.Since(statusLogDate) > diplomacy.statusLogPeriod {
 			clientIDCount := atomic.LoadUint64(clientIDCountPtr)
 			diplomacy.log.Info("Handshaking", "count", count, "clientIDCount", clientIDCount)
 			statusLogDate = time.Now()

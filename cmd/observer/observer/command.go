@@ -24,6 +24,7 @@ type CommandFlags struct {
 	RefreshTimeout     time.Duration
 	KeygenTimeout      time.Duration
 	KeygenConcurrency  uint
+	StatusLogPeriod    time.Duration
 }
 
 type Command struct {
@@ -54,6 +55,7 @@ func NewCommand() *Command {
 	instance.withRefreshTimeout()
 	instance.withKeygenTimeout()
 	instance.withKeygenConcurrency()
+	instance.withStatusLogPeriod()
 
 	return &instance
 }
@@ -133,6 +135,15 @@ func (command *Command) withKeygenConcurrency() {
 		Value: uint(runtime.GOMAXPROCS(-1)),
 	}
 	command.command.Flags().UintVar(&command.flags.KeygenConcurrency, flag.Name, flag.Value, flag.Usage)
+}
+
+func (command *Command) withStatusLogPeriod() {
+	flag := cli.DurationFlag{
+		Name:  "status-log-period",
+		Usage: "How often to log status summaries",
+		Value: 10 * time.Second,
+	}
+	command.command.Flags().DurationVar(&command.flags.StatusLogPeriod, flag.Name, flag.Value, flag.Usage)
 }
 
 func (command *Command) ExecuteContext(ctx context.Context, runFunc func(ctx context.Context, flags CommandFlags) error) error {

@@ -30,7 +30,7 @@ func mainWithFlags(ctx context.Context, flags observer.CommandFlags) error {
 		return err
 	}
 
-	go observer.StatusLoggerLoop(ctx, db, log.Root())
+	go observer.StatusLoggerLoop(ctx, db, flags.StatusLogPeriod, log.Root())
 
 	// the client ID doesn't need to be refreshed often
 	const handshakeRefreshTimeout = 7 * 24 * time.Hour
@@ -42,6 +42,7 @@ func mainWithFlags(ctx context.Context, flags observer.CommandFlags) error {
 		PrivateKey:       server.PrivateKey(),
 		ConcurrencyLimit: flags.CrawlerConcurrency,
 		RefreshTimeout:   flags.RefreshTimeout,
+		StatusLogPeriod:  flags.StatusLogPeriod,
 
 		HandshakeRefreshTimeout: handshakeRefreshTimeout,
 		MaxHandshakeTries:       maxHandshakeTries,

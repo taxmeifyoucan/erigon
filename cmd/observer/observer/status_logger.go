@@ -9,9 +9,9 @@ import (
 	"time"
 )
 
-func StatusLoggerLoop(ctx context.Context, db database.DB, logger log.Logger) {
+func StatusLoggerLoop(ctx context.Context, db database.DB, period time.Duration, logger log.Logger) {
 	for ctx.Err() == nil {
-		utils.Sleep(ctx, 10*time.Second)
+		utils.Sleep(ctx, period)
 
 		totalCount, err := db.CountNodes(ctx)
 		if err != nil {
