@@ -60,7 +60,7 @@ func NewCrawler(
 		config.PrivateKey,
 		config.ConcurrencyLimit,
 		config.HandshakeRefreshTimeout,
-		1*time.Hour,
+		4*time.Hour,
 		config.MaxHandshakeTries,
 		config.StatusLogPeriod,
 		logger)
