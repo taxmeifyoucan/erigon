@@ -32,6 +32,10 @@ type DB interface {
 	UpdateClientID(ctx context.Context, id NodeID, clientID string) error
 	UpdateHandshakeError(ctx context.Context, id NodeID, handshakeErr string) error
 	FindHandshakeLastTry(ctx context.Context, id NodeID) (*HandshakeTry, error)
+	FindHandshakeCandidates(ctx context.Context, minUnusedOKDuration time.Duration, minUnusedErrDuration time.Duration, maxHandshakeTries uint, limit uint) ([]NodeID, error)
+	MarkTakenHandshakeCandidates(ctx context.Context, nodes []NodeID) error
+	// TakeHandshakeCandidates runs FindHandshakeCandidates + MarkTakenHandshakeCandidates in a transaction.
+	TakeHandshakeCandidates(ctx context.Context, minUnusedOKDuration time.Duration, minUnusedErrDuration time.Duration, maxHandshakeTries uint, limit uint) ([]NodeID, error)
 
 	UpdateForkCompatibility(ctx context.Context, id NodeID, isCompatFork bool) error
 
@@ -40,7 +44,6 @@ type DB interface {
 
 	FindCandidates(ctx context.Context, minUnusedDuration time.Duration, maxHandshakeTries uint, limit uint) ([]NodeID, error)
 	MarkTakenNodes(ctx context.Context, nodes []NodeID) error
-
 	// TakeCandidates runs FindCandidates + MarkTakenNodes in a transaction.
 	TakeCandidates(ctx context.Context, minUnusedDuration time.Duration, maxHandshakeTries uint, limit uint) ([]NodeID, error)
 

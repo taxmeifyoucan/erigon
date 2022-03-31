@@ -11,6 +11,7 @@ import (
 	"github.com/ledgerwatch/erigon/cmd/utils"
 	"github.com/ledgerwatch/log/v3"
 	"path/filepath"
+	"time"
 )
 
 func mainWithFlags(ctx context.Context, flags observer.CommandFlags) error {
@@ -31,12 +32,18 @@ func mainWithFlags(ctx context.Context, flags observer.CommandFlags) error {
 
 	go observer.StatusLoggerLoop(ctx, db, log.Root())
 
+	// the client ID doesn't need to be refreshed often
+	const handshakeRefreshTimeout = 7 * 24 * time.Hour
+	const maxHandshakeTries uint = 10
+
 	crawlerConfig := observer.CrawlerConfig{
 		flags.Chain,
 		server.Bootnodes(),
 		server.PrivateKey(),
 		flags.CrawlerConcurrency,
 		flags.RefreshTimeout,
+		handshakeRefreshTimeout,
+		maxHandshakeTries,
 		flags.KeygenTimeout,
 		flags.KeygenConcurrency,
 	}

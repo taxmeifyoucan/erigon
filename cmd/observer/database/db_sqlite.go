@@ -48,6 +48,7 @@ CREATE INDEX IF NOT EXISTS idx_nodes_taken_last ON nodes (taken_last);
 CREATE INDEX IF NOT EXISTS idx_nodes_ip ON nodes (ip);
 CREATE INDEX IF NOT EXISTS idx_nodes_ip_v6 ON nodes (ip_v6);
 CREATE INDEX IF NOT EXISTS idx_nodes_compat_fork ON nodes (compat_fork);
+CREATE INDEX IF NOT EXISTS idx_nodes_handshake_updated ON nodes (handshake_updated);
 `
 
 	sqlUpsertNodeAddr = `
@@ -107,6 +108,21 @@ SELECT
 	handshake_updated
 FROM nodes
 WHERE id = ?
+`
+
+	sqlFindHandshakeCandidates = `
+SELECT id FROM nodes
+WHERE ((handshake_updated IS NULL)
+        OR ((handshake_updated < ?) AND (handshake_err IS NULL))
+    	OR ((handshake_updated < ?) AND (handshake_err IS NOT NULL)))
+	AND ((compat_fork == TRUE) OR (compat_fork IS NULL))
+	AND (handshake_try <= ?)
+ORDER BY handshake_updated
+LIMIT ?
+`
+
+	sqlMarkTakenHandshakeCandidates = `
+UPDATE nodes SET handshake_updated = ?, handshake_err = 'taken' WHERE id IN (123)
 `
 
 	sqlUpdateForkCompatibility = `
@@ -322,6 +338,95 @@ func (db *DBSQLite) FindHandshakeLastTry(ctx context.Context, id NodeID) (*Hands
 		time.Unix(updatedTimestamp.Int64, 0),
 	}
 	return &try, nil
+}
+
+func (db *DBSQLite) FindHandshakeCandidates(
+	ctx context.Context,
+	minUnusedOKDuration time.Duration,
+	minUnusedErrDuration time.Duration,
+	maxHandshakeTries uint,
+	limit uint,
+) ([]NodeID, error) {
+	updatedOKBefore := time.Now().Add(-minUnusedOKDuration).Unix()
+	updatedErrBefore := time.Now().Add(-minUnusedErrDuration).Unix()
+	cursor, err := db.db.QueryContext(
+		ctx,
+		sqlFindHandshakeCandidates,
+		updatedOKBefore,
+		updatedErrBefore,
+		maxHandshakeTries,
+		limit)
+	if err != nil {
+		return nil, fmt.Errorf("FindHandshakeCandidates failed to query candidates: %w", err)
+	}
+	defer func() {
+		_ = cursor.Close()
+	}()
+
+	var nodes []NodeID
+	for cursor.Next() {
+		var id string
+		err := cursor.Scan(&id)
+		if err != nil {
+			return nil, fmt.Errorf("FindHandshakeCandidates failed to read candidate data: %w", err)
+		}
+
+		nodes = append(nodes, NodeID(id))
+	}
+
+	if err := cursor.Err(); err != nil {
+		return nil, fmt.Errorf("FindHandshakeCandidates failed to iterate over candidates: %w", err)
+	}
+	return nodes, nil
+}
+
+func (db *DBSQLite) MarkTakenHandshakeCandidates(ctx context.Context, ids []NodeID) error {
+	if len(ids) == 0 {
+		return nil
+	}
+
+	takenLast := time.Now().Unix()
+
+	idsPlaceholders := strings.TrimRight(strings.Repeat("?,", len(ids)), ",")
+	query := strings.Replace(sqlMarkTakenHandshakeCandidates, "123", idsPlaceholders, 1)
+	args := append([]interface{}{takenLast}, stringsToAny(ids)...)
+
+	_, err := db.db.ExecContext(ctx, query, args...)
+	if err != nil {
+		return fmt.Errorf("failed to mark taken handshake candidates: %w", err)
+	}
+	return nil
+}
+
+func (db *DBSQLite) TakeHandshakeCandidates(
+	ctx context.Context,
+	minUnusedOKDuration time.Duration,
+	minUnusedErrDuration time.Duration,
+	maxHandshakeTries uint,
+	limit uint,
+) ([]NodeID, error) {
+	tx, err := db.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("TakeHandshakeCandidates failed to start transaction: %w", err)
+	}
+
+	ids, err := db.FindHandshakeCandidates(ctx, minUnusedOKDuration, minUnusedErrDuration, maxHandshakeTries, limit)
+	if err != nil {
+		_ = tx.Rollback()
+		return nil, err
+	}
+
+	err = db.MarkTakenHandshakeCandidates(ctx, ids)
+	if err != nil {
+		_ = tx.Rollback()
+		return nil, err
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		return nil, fmt.Errorf("TakeHandshakeCandidates failed to commit transaction: %w", err)
+	}
+	return ids, nil
 }
 
 func (db *DBSQLite) UpdateForkCompatibility(ctx context.Context, id NodeID, isCompatFork bool) error {

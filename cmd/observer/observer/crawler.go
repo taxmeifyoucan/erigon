@@ -21,6 +21,7 @@ type Crawler struct {
 	db         database.DBRetrier
 	config     CrawlerConfig
 	forkFilter forkid.Filter
+	diplomacy  *Diplomacy
 	log        log.Logger
 }
 
@@ -30,6 +31,9 @@ type CrawlerConfig struct {
 	PrivateKey       *ecdsa.PrivateKey
 	ConcurrencyLimit uint
 	RefreshTimeout   time.Duration
+
+	HandshakeRefreshTimeout time.Duration
+	MaxHandshakeTries       uint
 
 	KeygenTimeout     time.Duration
 	KeygenConcurrency uint
@@ -50,14 +54,33 @@ func NewCrawler(
 
 	forkFilter := forkid.NewStaticFilter(chainConfig, *genesisHash)
 
+	diplomacy := NewDiplomacy(
+		database.NewDBRetrier(db, logger),
+		config.PrivateKey,
+		config.ConcurrencyLimit,
+		config.HandshakeRefreshTimeout,
+		1*time.Hour,
+		config.MaxHandshakeTries,
+		logger)
+
 	instance := Crawler{
 		transport,
 		database.NewDBRetrier(db, logger),
 		config,
 		forkFilter,
+		diplomacy,
 		logger,
 	}
 	return &instance, nil
+}
+
+func (crawler *Crawler) startDiplomacy(ctx context.Context) {
+	go func() {
+		err := crawler.diplomacy.Run(ctx)
+		if (err != nil) && !errors.Is(err, context.Canceled) {
+			crawler.log.Error("Diplomacy has failed", "err", err)
+		}
+	}()
 }
 
 type candidateNode struct {
@@ -93,7 +116,7 @@ func (crawler *Crawler) selectCandidates(ctx context.Context, nodes chan<- candi
 
 	for ctx.Err() == nil {
 		refreshTimeout := crawler.config.RefreshTimeout
-		maxHandshakeTries := uint(10)
+		maxHandshakeTries := crawler.config.MaxHandshakeTries
 		limit := crawler.config.ConcurrencyLimit
 		candidates, err := crawler.db.TakeCandidates(ctx, refreshTimeout, maxHandshakeTries, limit)
 		if err != nil {
@@ -117,6 +140,8 @@ func (crawler *Crawler) selectCandidates(ctx context.Context, nodes chan<- candi
 }
 
 func (crawler *Crawler) Run(ctx context.Context) error {
+	crawler.startDiplomacy(ctx)
+
 	nodes := crawler.startSelectCandidates(ctx)
 	sem := semaphore.NewWeighted(int64(crawler.config.ConcurrencyLimit))
 	// allow only 1 keygen at a time
@@ -165,8 +190,12 @@ func (crawler *Crawler) Run(ctx context.Context) error {
 			return fmt.Errorf("failed to get handshake last try: %w", err)
 		}
 
-		// the client ID doesn't need to be refreshed often
-		handshakeRefreshTimeout := 7 * 24 * time.Hour
+		diplomat := NewDiplomat(
+			node,
+			crawler.config.PrivateKey,
+			handshakeLastTry,
+			crawler.config.HandshakeRefreshTimeout,
+			logger)
 
 		keygenCachedHexKeys, err := crawler.db.FindNeighborBucketKeys(ctx, id)
 		if err != nil {
@@ -181,9 +210,7 @@ func (crawler *Crawler) Run(ctx context.Context) error {
 			node,
 			crawler.transport,
 			crawler.forkFilter,
-			crawler.config.PrivateKey,
-			handshakeLastTry,
-			handshakeRefreshTimeout,
+			diplomat,
 			crawler.config.KeygenTimeout,
 			crawler.config.KeygenConcurrency,
 			keygenSem,

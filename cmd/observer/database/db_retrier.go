@@ -55,6 +55,18 @@ func (db DBRetrier) UpdateHandshakeError(ctx context.Context, id NodeID, handsha
 	return err
 }
 
+func (db DBRetrier) TakeHandshakeCandidates(ctx context.Context, minUnusedOKDuration time.Duration, minUnusedErrDuration time.Duration, maxHandshakeTries uint, limit uint) ([]NodeID, error) {
+	resultAny, err := db.retry(ctx, "TakeHandshakeCandidates", func(ctx context.Context) (interface{}, error) {
+		return db.db.TakeHandshakeCandidates(ctx, minUnusedOKDuration, minUnusedErrDuration, maxHandshakeTries, limit)
+	})
+
+	if resultAny == nil {
+		return nil, err
+	}
+	result := resultAny.([]NodeID)
+	return result, err
+}
+
 func (db DBRetrier) UpdateForkCompatibility(ctx context.Context, id NodeID, isCompatFork bool) error {
 	_, err := db.retry(ctx, "UpdateForkCompatibility", func(ctx context.Context) (interface{}, error) {
 		return nil, db.db.UpdateForkCompatibility(ctx, id, isCompatFork)
