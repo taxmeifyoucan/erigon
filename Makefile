@@ -91,6 +91,7 @@ test:
 
 lint:
 	@./build/bin/golangci-lint run --config ./.golangci.yml
+	@cd ./cmd/observer && ../../build/bin/golangci-lint run --config ../../.golangci.yml
 
 lintci:
 	@echo "--> Running linter for code"
