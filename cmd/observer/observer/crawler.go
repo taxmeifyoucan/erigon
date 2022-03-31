@@ -115,12 +115,17 @@ func (crawler *Crawler) selectCandidates(ctx context.Context, nodes chan<- candi
 	}
 
 	for ctx.Err() == nil {
-		refreshTimeout := crawler.config.RefreshTimeout
-		maxHandshakeTries := crawler.config.MaxHandshakeTries
-		limit := crawler.config.ConcurrencyLimit
-		candidates, err := crawler.db.TakeCandidates(ctx, refreshTimeout, maxHandshakeTries, limit)
+		candidates, err := crawler.db.TakeCandidates(
+			ctx,
+			crawler.config.RefreshTimeout,
+			crawler.config.MaxHandshakeTries,
+			crawler.config.ConcurrencyLimit)
 		if err != nil {
-			return err
+			if crawler.db.IsConflictError(err) {
+				crawler.log.Warn("Failed to take candidates", "err", err)
+			} else {
+				return err
+			}
 		}
 
 		if len(candidates) == 0 {

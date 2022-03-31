@@ -67,7 +67,11 @@ func (diplomacy *Diplomacy) selectCandidates(ctx context.Context, candidatesChan
 			diplomacy.maxHandshakeTries,
 			diplomacy.concurrencyLimit)
 		if err != nil {
-			return err
+			if diplomacy.db.IsConflictError(err) {
+				diplomacy.log.Warn("Failed to take handshake candidates", "err", err)
+			} else {
+				return err
+			}
 		}
 
 		if len(candidates) == 0 {

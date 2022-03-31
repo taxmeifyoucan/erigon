@@ -106,3 +106,7 @@ func (db DBRetrier) FindHandshakeLastTry(ctx context.Context, id NodeID) (*Hands
 func (db DBRetrier) FindNeighborBucketKeys(ctx context.Context, id NodeID) ([]string, error) {
 	return db.db.FindNeighborBucketKeys(ctx, id)
 }
+
+func (db DBRetrier) IsConflictError(err error) bool {
+	return db.db.IsConflictError(err)
+}
