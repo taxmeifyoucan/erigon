@@ -21,8 +21,8 @@ type NodeAddr struct {
 
 type HandshakeTry struct {
 	HasFailed bool
-	Num uint
-	Time time.Time
+	Num       uint
+	Time      time.Time
 }
 
 type DB interface {

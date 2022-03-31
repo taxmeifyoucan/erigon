@@ -84,7 +84,7 @@ func (crawler *Crawler) startDiplomacy(ctx context.Context) {
 }
 
 type candidateNode struct {
-	id database.NodeID
+	id   database.NodeID
 	node *enode.Node
 }
 

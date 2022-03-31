@@ -179,7 +179,7 @@ func NewDBSQLite(filePath string) (*DBSQLite, error) {
 		return nil, fmt.Errorf("failed to create the DB schema: %w", err)
 	}
 
-	instance := DBSQLite{db }
+	instance := DBSQLite{db}
 	return &instance, nil
 }
 

@@ -37,15 +37,17 @@ func mainWithFlags(ctx context.Context, flags observer.CommandFlags) error {
 	const maxHandshakeTries uint = 10
 
 	crawlerConfig := observer.CrawlerConfig{
-		flags.Chain,
-		server.Bootnodes(),
-		server.PrivateKey(),
-		flags.CrawlerConcurrency,
-		flags.RefreshTimeout,
-		handshakeRefreshTimeout,
-		maxHandshakeTries,
-		flags.KeygenTimeout,
-		flags.KeygenConcurrency,
+		Chain:            flags.Chain,
+		Bootnodes:        server.Bootnodes(),
+		PrivateKey:       server.PrivateKey(),
+		ConcurrencyLimit: flags.CrawlerConcurrency,
+		RefreshTimeout:   flags.RefreshTimeout,
+
+		HandshakeRefreshTimeout: handshakeRefreshTimeout,
+		MaxHandshakeTries:       maxHandshakeTries,
+
+		KeygenTimeout:     flags.KeygenTimeout,
+		KeygenConcurrency: flags.KeygenConcurrency,
 	}
 
 	crawler, err := observer.NewCrawler(discV4, db, crawlerConfig, log.Root())
@@ -62,7 +64,7 @@ func reportWithFlags(ctx context.Context, flags reports.CommandFlags) error {
 		return err
 	}
 
-	statusReport, err:= reports.CreateStatusReport(ctx, db)
+	statusReport, err := reports.CreateStatusReport(ctx, db)
 	if err != nil {
 		return err
 	}

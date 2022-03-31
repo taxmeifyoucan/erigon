@@ -26,10 +26,10 @@ type Interrogator struct {
 	forkFilter forkid.Filter
 	diplomat   *Diplomat
 
-	keygenTimeout      time.Duration
-	keygenConcurrency  uint
-	keygenSemaphore    *semaphore.Weighted
-	keygenCachedKeys   []*ecdsa.PublicKey
+	keygenTimeout     time.Duration
+	keygenConcurrency uint
+	keygenSemaphore   *semaphore.Weighted
+	keygenCachedKeys  []*ecdsa.PublicKey
 
 	log log.Logger
 }
@@ -196,4 +196,3 @@ func valuesOfIDToNodeMap(m map[enode.ID]*enode.Node) []*enode.Node {
 	}
 	return values
 }
-

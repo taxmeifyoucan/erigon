@@ -35,14 +35,14 @@ type HelloMessage struct {
 type HandshakeErrorID string
 
 const (
-	HandshakeErrorIDConnect    HandshakeErrorID = "connect"
-	HandshakeErrorIDSetTimeout HandshakeErrorID = "set-timeout"
-	HandshakeErrorIDAuth       HandshakeErrorID = "auth"
-	HandshakeErrorIDRead       HandshakeErrorID = "read"
+	HandshakeErrorIDConnect           HandshakeErrorID = "connect"
+	HandshakeErrorIDSetTimeout        HandshakeErrorID = "set-timeout"
+	HandshakeErrorIDAuth              HandshakeErrorID = "auth"
+	HandshakeErrorIDRead              HandshakeErrorID = "read"
 	HandshakeErrorIDUnexpectedMessage HandshakeErrorID = "unexpected-message"
-	HandshakeErrorIDDisconnectDecode HandshakeErrorID = "disconnect-decode"
-	HandshakeErrorIDDisconnect HandshakeErrorID = "disconnect"
-	HandshakeErrorIDHelloDecode HandshakeErrorID = "hello-decode"
+	HandshakeErrorIDDisconnectDecode  HandshakeErrorID = "disconnect-decode"
+	HandshakeErrorIDDisconnect        HandshakeErrorID = "disconnect"
+	HandshakeErrorIDHelloDecode       HandshakeErrorID = "hello-decode"
 )
 
 type HandshakeError struct {

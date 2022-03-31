@@ -5,7 +5,7 @@ import "fmt"
 type InterrogationErrorID int
 
 const (
-	InterrogationErrorPing      InterrogationErrorID = iota + 1
+	InterrogationErrorPing InterrogationErrorID = iota + 1
 	InterrogationErrorENRDecode
 	InterrogationErrorIncompatibleForkID
 	InterrogationErrorBlacklistedClientID

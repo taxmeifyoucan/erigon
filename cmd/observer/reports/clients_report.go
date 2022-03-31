@@ -9,7 +9,7 @@ import (
 )
 
 type ClientsReportEntry struct {
-	Name string
+	Name  string
 	Count uint
 }
 
@@ -43,7 +43,9 @@ func CreateClientsReport(ctx context.Context, db database.DB) (*ClientsReport, e
 
 	for i := 0; i < 10; i++ {
 		clientName, count := takeMapMaxValue(groups)
-		if count == 0 { break }
+		if count == 0 {
+			break
+		}
 
 		client := ClientsReportEntry{
 			clientName,

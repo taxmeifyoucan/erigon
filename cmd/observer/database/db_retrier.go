@@ -18,7 +18,9 @@ func NewDBRetrier(db DB, logger log.Logger) DBRetrier {
 }
 
 func retryBackoffTime(attempt int) time.Duration {
-	if attempt <= 0 { return 0 }
+	if attempt <= 0 {
+		return 0
+	}
 	jitter := rand.Int63n(20 * time.Millisecond.Nanoseconds() * int64(attempt))
 	var ns int64
 	if attempt <= 5 {

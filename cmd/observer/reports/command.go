@@ -7,7 +7,7 @@ import (
 )
 
 type CommandFlags struct {
-	DataDir            string
+	DataDir string
 }
 
 type Command struct {
@@ -17,8 +17,8 @@ type Command struct {
 
 func NewCommand() *Command {
 	command := cobra.Command{
-		Use:     "report",
-		Short:   "P2P network crawler database report",
+		Use:   "report",
+		Short: "P2P network crawler database report",
 	}
 
 	instance := Command{
