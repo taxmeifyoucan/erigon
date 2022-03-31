@@ -76,6 +76,14 @@ func clientNameBlacklist() []string {
 		// https://ubiqsmart.com
 		"Gubiq",
 
+		// Gvns/v3.2.0-unstable/linux-amd64/go1.12.4
+		// https://github.com/AMTcommunity/go-vnscoin
+		"Gvns",
+
+		// Moac/v2.1.5-stable-af7bea47/linux-amd64/go1.13.4
+		// https://www.moac.io
+		"Moac",
+
 		// pchain/linux-amd64/go1.13.3
 		// http://pchain.org
 		"pchain",
