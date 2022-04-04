@@ -96,15 +96,39 @@ func (db DBRetrier) TakeCandidates(ctx context.Context, minUnusedDuration time.D
 }
 
 func (db DBRetrier) FindNodeAddr(ctx context.Context, id NodeID) (*NodeAddr, error) {
-	return db.db.FindNodeAddr(ctx, id)
+	resultAny, err := db.retry(ctx, "FindNodeAddr", func(ctx context.Context) (interface{}, error) {
+		return db.db.FindNodeAddr(ctx, id)
+	})
+
+	if resultAny == nil {
+		return nil, err
+	}
+	result := resultAny.(*NodeAddr)
+	return result, err
 }
 
 func (db DBRetrier) FindHandshakeLastTry(ctx context.Context, id NodeID) (*HandshakeTry, error) {
-	return db.db.FindHandshakeLastTry(ctx, id)
+	resultAny, err := db.retry(ctx, "FindHandshakeLastTry", func(ctx context.Context) (interface{}, error) {
+		return db.db.FindHandshakeLastTry(ctx, id)
+	})
+
+	if resultAny == nil {
+		return nil, err
+	}
+	result := resultAny.(*HandshakeTry)
+	return result, err
 }
 
 func (db DBRetrier) FindNeighborBucketKeys(ctx context.Context, id NodeID) ([]string, error) {
-	return db.db.FindNeighborBucketKeys(ctx, id)
+	resultAny, err := db.retry(ctx, "FindNeighborBucketKeys", func(ctx context.Context) (interface{}, error) {
+		return db.db.FindNeighborBucketKeys(ctx, id)
+	})
+
+	if resultAny == nil {
+		return nil, err
+	}
+	result := resultAny.([]string)
+	return result, err
 }
 
 func (db DBRetrier) IsConflictError(err error) bool {
