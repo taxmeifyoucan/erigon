@@ -31,6 +31,8 @@ CREATE TABLE IF NOT EXISTS nodes (
     ip_v6_port_rlpx INTEGER,
     addr_updated INTEGER NOT NULL,
 
+	ping_try INTEGER NOT NULL DEFAULT 0,
+
     compat_fork INTEGER,
     compat_fork_updated INTEGER,
 
@@ -82,6 +84,14 @@ SELECT
     ip_v6_port_rlpx
 FROM nodes
 WHERE id = ?
+`
+
+	sqlResetPingError = `
+UPDATE nodes SET ping_try = 0 WHERE id = ?
+`
+
+	sqlUpdatePingError = `
+UPDATE nodes SET ping_try = nodes.ping_try + 1 WHERE id = ?
 `
 
 	sqlUpdateClientID = `
@@ -141,6 +151,7 @@ SELECT neighbor_keys FROM nodes WHERE id = ?
 SELECT id FROM nodes
 WHERE ((taken_last IS NULL) OR (taken_last < ?))
 	AND ((compat_fork == TRUE) OR (compat_fork IS NULL))
+    AND (ping_try <= ?)
 	AND (handshake_try <= ?)
 ORDER BY taken_last
 LIMIT ?
@@ -291,6 +302,22 @@ func (db *DBSQLite) FindNodeAddr(ctx context.Context, id NodeID) (*NodeAddr, err
 	}
 
 	return &addr, nil
+}
+
+func (db *DBSQLite) ResetPingError(ctx context.Context, id NodeID) error {
+	_, err := db.db.ExecContext(ctx, sqlResetPingError, id)
+	if err != nil {
+		return fmt.Errorf("ResetPingError failed: %w", err)
+	}
+	return nil
+}
+
+func (db *DBSQLite) UpdatePingError(ctx context.Context, id NodeID) error {
+	_, err := db.db.ExecContext(ctx, sqlUpdatePingError, id)
+	if err != nil {
+		return fmt.Errorf("UpdatePingError failed: %w", err)
+	}
+	return nil
 }
 
 func (db *DBSQLite) UpdateClientID(ctx context.Context, id NodeID, clientID string) error {
@@ -466,9 +493,9 @@ func (db *DBSQLite) FindNeighborBucketKeys(ctx context.Context, id NodeID) ([]st
 	return strings.Split(keysStr.String, ","), nil
 }
 
-func (db *DBSQLite) FindCandidates(ctx context.Context, minUnusedDuration time.Duration, maxHandshakeTries uint, limit uint) ([]NodeID, error) {
+func (db *DBSQLite) FindCandidates(ctx context.Context, minUnusedDuration time.Duration, maxPingTries uint, maxHandshakeTries uint, limit uint) ([]NodeID, error) {
 	takenLastBefore := time.Now().Add(-minUnusedDuration).Unix()
-	cursor, err := db.db.QueryContext(ctx, sqlFindCandidates, takenLastBefore, maxHandshakeTries, limit)
+	cursor, err := db.db.QueryContext(ctx, sqlFindCandidates, takenLastBefore, maxPingTries, maxHandshakeTries, limit)
 	if err != nil {
 		return nil, fmt.Errorf("FindCandidates failed to query candidates: %w", err)
 	}
@@ -511,13 +538,13 @@ func (db *DBSQLite) MarkTakenNodes(ctx context.Context, ids []NodeID) error {
 	return nil
 }
 
-func (db *DBSQLite) TakeCandidates(ctx context.Context, minUnusedDuration time.Duration, maxHandshakeTries uint, limit uint) ([]NodeID, error) {
+func (db *DBSQLite) TakeCandidates(ctx context.Context, minUnusedDuration time.Duration, maxPingTries uint, maxHandshakeTries uint, limit uint) ([]NodeID, error) {
 	tx, err := db.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("TakeCandidates failed to start transaction: %w", err)
 	}
 
-	ids, err := db.FindCandidates(ctx, minUnusedDuration, maxHandshakeTries, limit)
+	ids, err := db.FindCandidates(ctx, minUnusedDuration, maxPingTries, maxHandshakeTries, limit)
 	if err != nil {
 		_ = tx.Rollback()
 		return nil, err

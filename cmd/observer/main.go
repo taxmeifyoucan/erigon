@@ -32,8 +32,11 @@ func mainWithFlags(ctx context.Context, flags observer.CommandFlags) error {
 
 	go observer.StatusLoggerLoop(ctx, db, flags.StatusLogPeriod, log.Root())
 
+	// how many times to retry PING before abandoning a candidate
+	const maxPingTries uint = 3
 	// the client ID doesn't need to be refreshed often
 	const handshakeRefreshTimeout = 20 * 24 * time.Hour
+	// how many times to retry handshake before abandoning a candidate
 	const maxHandshakeTries uint = 3
 
 	crawlerConfig := observer.CrawlerConfig{
@@ -42,6 +45,7 @@ func mainWithFlags(ctx context.Context, flags observer.CommandFlags) error {
 		PrivateKey:       server.PrivateKey(),
 		ConcurrencyLimit: flags.CrawlerConcurrency,
 		RefreshTimeout:   flags.RefreshTimeout,
+		MaxPingTries:     maxPingTries,
 		StatusLogPeriod:  flags.StatusLogPeriod,
 
 		HandshakeRefreshTimeout: handshakeRefreshTimeout,

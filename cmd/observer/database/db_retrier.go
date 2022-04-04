@@ -43,6 +43,20 @@ func (db DBRetrier) UpsertNodeAddr(ctx context.Context, id NodeID, addr NodeAddr
 	return err
 }
 
+func (db DBRetrier) ResetPingError(ctx context.Context, id NodeID) error {
+	_, err := db.retry(ctx, "ResetPingError", func(ctx context.Context) (interface{}, error) {
+		return nil, db.db.ResetPingError(ctx, id)
+	})
+	return err
+}
+
+func (db DBRetrier) UpdatePingError(ctx context.Context, id NodeID) error {
+	_, err := db.retry(ctx, "UpdatePingError", func(ctx context.Context) (interface{}, error) {
+		return nil, db.db.UpdatePingError(ctx, id)
+	})
+	return err
+}
+
 func (db DBRetrier) UpdateClientID(ctx context.Context, id NodeID, clientID string) error {
 	_, err := db.retry(ctx, "UpdateClientID", func(ctx context.Context) (interface{}, error) {
 		return nil, db.db.UpdateClientID(ctx, id, clientID)
@@ -83,9 +97,9 @@ func (db DBRetrier) UpdateNeighborBucketKeys(ctx context.Context, id NodeID, key
 	return err
 }
 
-func (db DBRetrier) TakeCandidates(ctx context.Context, minUnusedDuration time.Duration, maxHandshakeTries uint, limit uint) ([]NodeID, error) {
+func (db DBRetrier) TakeCandidates(ctx context.Context, minUnusedDuration time.Duration, maxPingTries uint, maxHandshakeTries uint, limit uint) ([]NodeID, error) {
 	resultAny, err := db.retry(ctx, "TakeCandidates", func(ctx context.Context) (interface{}, error) {
-		return db.db.TakeCandidates(ctx, minUnusedDuration, maxHandshakeTries, limit)
+		return db.db.TakeCandidates(ctx, minUnusedDuration, maxPingTries, maxHandshakeTries, limit)
 	})
 
 	if resultAny == nil {

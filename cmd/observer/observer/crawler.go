@@ -32,6 +32,7 @@ type CrawlerConfig struct {
 	PrivateKey       *ecdsa.PrivateKey
 	ConcurrencyLimit uint
 	RefreshTimeout   time.Duration
+	MaxPingTries     uint
 	StatusLogPeriod  time.Duration
 
 	HandshakeRefreshTimeout time.Duration
@@ -135,6 +136,7 @@ func (crawler *Crawler) selectCandidates(ctx context.Context, nodes chan<- candi
 		candidates, err := crawler.db.TakeCandidates(
 			ctx,
 			crawler.config.RefreshTimeout,
+			crawler.config.MaxPingTries,
 			crawler.config.MaxHandshakeTries,
 			crawler.config.ConcurrencyLimit)
 		if err != nil {
@@ -263,6 +265,8 @@ func (crawler *Crawler) Run(ctx context.Context) error {
 
 			result, err := interrogator.Run(ctx)
 
+			isPingError := (err != nil) && (err.id == InterrogationErrorPing)
+
 			var isCompatFork *bool
 			if result != nil {
 				isCompatFork = result.IsCompatFork
@@ -307,7 +311,7 @@ func (crawler *Crawler) Run(ctx context.Context) error {
 			}
 
 			crawler.saveQueue.EnqueueTask(ctx, func(ctx context.Context) error {
-				return crawler.saveInterrogationResult(ctx, id, result, isCompatFork, clientID)
+				return crawler.saveInterrogationResult(ctx, id, result, isPingError, isCompatFork, clientID)
 			})
 		}()
 	}
@@ -318,6 +322,7 @@ func (crawler *Crawler) saveInterrogationResult(
 	ctx context.Context,
 	id database.NodeID,
 	result *InterrogationResult,
+	isPingError bool,
 	isCompatFork *bool,
 	clientID *string,
 ) error {
@@ -348,6 +353,18 @@ func (crawler *Crawler) saveInterrogationResult(
 
 	if (result != nil) && (result.HandshakeErr != nil) {
 		dbErr := crawler.db.UpdateHandshakeError(ctx, id, result.HandshakeErr.StringCode())
+		if dbErr != nil {
+			return dbErr
+		}
+	}
+
+	if isPingError {
+		dbErr := crawler.db.UpdatePingError(ctx, id)
+		if dbErr != nil {
+			return dbErr
+		}
+	} else {
+		dbErr := crawler.db.ResetPingError(ctx, id)
 		if dbErr != nil {
 			return dbErr
 		}
