@@ -119,6 +119,11 @@ func (diplomacy *Diplomacy) Run(ctx context.Context) error {
 
 		nodeAddr, err := diplomacy.db.FindNodeAddr(ctx, id)
 		if err != nil {
+			if diplomacy.db.IsConflictError(err) {
+				diplomacy.log.Warn("Failed to get the node address", "err", err)
+				sem.Release(1)
+				continue
+			}
 			return fmt.Errorf("failed to get the node address: %w", err)
 		}
 
@@ -132,6 +137,11 @@ func (diplomacy *Diplomacy) Run(ctx context.Context) error {
 
 		handshakeLastTry, err := diplomacy.db.FindHandshakeLastTry(ctx, id)
 		if err != nil {
+			if diplomacy.db.IsConflictError(err) {
+				diplomacy.log.Warn("Failed to get handshake last try", "err", err)
+				sem.Release(1)
+				continue
+			}
 			return fmt.Errorf("failed to get handshake last try: %w", err)
 		}
 

@@ -180,6 +180,11 @@ func (crawler *Crawler) Run(ctx context.Context) error {
 		if node == nil {
 			nodeAddr, err := crawler.db.FindNodeAddr(ctx, id)
 			if err != nil {
+				if crawler.db.IsConflictError(err) {
+					crawler.log.Warn("Failed to get the node address", "err", err)
+					sem.Release(1)
+					continue
+				}
 				return fmt.Errorf("failed to get the node address: %w", err)
 			}
 
@@ -194,6 +199,11 @@ func (crawler *Crawler) Run(ctx context.Context) error {
 
 		handshakeLastTry, err := crawler.db.FindHandshakeLastTry(ctx, id)
 		if err != nil {
+			if crawler.db.IsConflictError(err) {
+				crawler.log.Warn("Failed to get handshake last try", "err", err)
+				sem.Release(1)
+				continue
+			}
 			return fmt.Errorf("failed to get handshake last try: %w", err)
 		}
 
@@ -206,6 +216,11 @@ func (crawler *Crawler) Run(ctx context.Context) error {
 
 		keygenCachedHexKeys, err := crawler.db.FindNeighborBucketKeys(ctx, id)
 		if err != nil {
+			if crawler.db.IsConflictError(err) {
+				crawler.log.Warn("Failed to get neighbor bucket keys", "err", err)
+				sem.Release(1)
+				continue
+			}
 			return fmt.Errorf("failed to get neighbor bucket keys: %w", err)
 		}
 		keygenCachedKeys, err := parseHexPublicKeys(keygenCachedHexKeys)
