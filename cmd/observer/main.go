@@ -33,8 +33,8 @@ func mainWithFlags(ctx context.Context, flags observer.CommandFlags) error {
 	go observer.StatusLoggerLoop(ctx, db, flags.StatusLogPeriod, log.Root())
 
 	// the client ID doesn't need to be refreshed often
-	const handshakeRefreshTimeout = 7 * 24 * time.Hour
-	const maxHandshakeTries uint = 10
+	const handshakeRefreshTimeout = 20 * 24 * time.Hour
+	const maxHandshakeTries uint = 3
 
 	crawlerConfig := observer.CrawlerConfig{
 		Chain:            flags.Chain,
