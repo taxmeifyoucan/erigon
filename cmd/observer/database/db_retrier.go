@@ -21,18 +21,18 @@ func retryBackoffTime(attempt int) time.Duration {
 	if attempt <= 0 {
 		return 0
 	}
-	jitter := rand.Int63n(20 * time.Millisecond.Nanoseconds() * int64(attempt))
+	jitter := rand.Int63n(30 * time.Millisecond.Nanoseconds() * int64(attempt))
 	var ns int64
-	if attempt <= 5 {
+	if attempt <= 6 {
 		ns = ((50 * time.Millisecond.Nanoseconds()) << (attempt - 1)) + jitter
 	} else {
-		ns = time.Second.Nanoseconds() + jitter
+		ns = 1600*time.Millisecond.Nanoseconds() + jitter
 	}
 	return time.Duration(ns)
 }
 
 func (db DBRetrier) retry(ctx context.Context, opName string, op func(context.Context) (interface{}, error)) (interface{}, error) {
-	const retryCount = 32
+	const retryCount = 40
 	return utils.Retry(ctx, retryCount, retryBackoffTime, db.db.IsConflictError, db.log, opName, op)
 }
 
