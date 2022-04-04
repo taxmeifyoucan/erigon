@@ -157,38 +157,56 @@ func (diplomacy *Diplomacy) Run(ctx context.Context) error {
 
 			clientID, handshakeErr := diplomat.Run(ctx)
 
-			if (clientID != nil) && IsClientIDBlacklisted(*clientID) {
-				dbErr := diplomacy.db.UpdateForkCompatibility(ctx, id, false)
-				if dbErr != nil {
-					if !errors.Is(dbErr, context.Canceled) {
-						logger.Error("Failed to update fork compatibility", "err", dbErr)
-					}
-					return
-				}
-			}
-
 			if clientID != nil {
 				atomic.AddUint64(clientIDCountPtr, 1)
-
-				dbErr := diplomacy.db.UpdateClientID(ctx, id, *clientID)
-				if dbErr != nil {
-					if !errors.Is(dbErr, context.Canceled) {
-						logger.Error("Failed to update client ID", "err", dbErr)
-					}
-					return
-				}
 			}
 
-			if handshakeErr != nil {
-				dbErr := diplomacy.db.UpdateHandshakeError(ctx, id, handshakeErr.StringCode())
-				if dbErr != nil {
-					if !errors.Is(dbErr, context.Canceled) {
-						logger.Error("Failed to update handshake error", "err", dbErr)
-					}
-					return
+			var isCompatFork *bool
+			if (clientID != nil) && IsClientIDBlacklisted(*clientID) {
+				isCompatFork = new(bool)
+				*isCompatFork = false
+			}
+
+			saveErr := diplomacy.saveDiplomatResult(ctx, id, clientID, handshakeErr, isCompatFork)
+			if (saveErr != nil) && !errors.Is(saveErr, context.Canceled) {
+				logFunc := logger.Error
+				if diplomacy.db.IsConflictError(saveErr) {
+					logFunc = logger.Warn
 				}
+				logFunc("Failed to save diplomat result", "err", saveErr)
 			}
 		}(id)
 	}
+	return nil
+}
+
+func (diplomacy *Diplomacy) saveDiplomatResult(
+	ctx context.Context,
+	id database.NodeID,
+	clientID *string,
+	handshakeErr *HandshakeError,
+	isCompatFork *bool,
+) error {
+	if clientID != nil {
+		dbErr := diplomacy.db.UpdateClientID(ctx, id, *clientID)
+		if dbErr != nil {
+			return dbErr
+		}
+	}
+
+	if handshakeErr != nil {
+		dbErr := diplomacy.db.UpdateHandshakeError(ctx, id, handshakeErr.StringCode())
+		if dbErr != nil {
+			return dbErr
+		}
+	}
+
+	if isCompatFork != nil {
+		dbErr := diplomacy.db.UpdateForkCompatibility(ctx, id, *isCompatFork)
+		if dbErr != nil {
+			return dbErr
+		}
+	}
+
 	return nil
 }

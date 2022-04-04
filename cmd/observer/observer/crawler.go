@@ -257,32 +257,12 @@ func (crawler *Crawler) Run(ctx context.Context) error {
 				*isCompatFork = false
 			}
 
-			if isCompatFork != nil {
-				dbErr := crawler.db.UpdateForkCompatibility(ctx, id, *isCompatFork)
-				if dbErr != nil {
-					if !errors.Is(dbErr, context.Canceled) {
-						logger.Error("Failed to update fork compatibility", "err", dbErr)
-					}
-					return
-				}
-			}
-
 			var clientID *string
 			if result != nil {
 				clientID = result.ClientID
 			} else if (err != nil) && (err.id == InterrogationErrorBlacklistedClientID) {
 				clientID = new(string)
 				*clientID = err.wrappedErr.Error()
-			}
-
-			if clientID != nil {
-				dbErr := crawler.db.UpdateClientID(ctx, id, *clientID)
-				if dbErr != nil {
-					if !errors.Is(dbErr, context.Canceled) {
-						logger.Error("Failed to update client ID", "err", dbErr)
-					}
-					return
-				}
 			}
 
 			if err != nil {
@@ -302,50 +282,79 @@ func (crawler *Crawler) Run(ctx context.Context) error {
 					}
 					logFunc("Failed to interrogate node", "err", err)
 				}
-				return
 			}
 
-			if result.HandshakeErr != nil {
-				dbErr := crawler.db.UpdateHandshakeError(ctx, id, result.HandshakeErr.StringCode())
-				if dbErr != nil {
-					if !errors.Is(dbErr, context.Canceled) {
-						logger.Error("Failed to update handshake error", "err", dbErr)
-					}
-					return
-				}
+			if result != nil {
+				peers := result.Peers
+				logger.Debug(fmt.Sprintf("Got %d peers", len(peers)))
+				atomic.AddUint64(foundPeersCountPtr, uint64(len(peers)))
 			}
 
-			if len(result.KeygenKeys) >= 15 {
-				keygenHexKeys := hexEncodePublicKeys(result.KeygenKeys)
-				dbErr := crawler.db.UpdateNeighborBucketKeys(ctx, id, keygenHexKeys)
-				if dbErr != nil {
-					if !errors.Is(dbErr, context.Canceled) {
-						logger.Error("Failed to update neighbor bucket keys", "err", dbErr)
-					}
-					return
+			saveErr := crawler.saveInterrogationResult(ctx, id, result, isCompatFork, clientID)
+			if (saveErr != nil) && !errors.Is(saveErr, context.Canceled) {
+				logFunc := logger.Error
+				if crawler.db.IsConflictError(saveErr) {
+					logFunc = logger.Warn
 				}
-			}
-
-			peers := result.Peers
-			logger.Debug(fmt.Sprintf("Got %d peers", len(peers)))
-			atomic.AddUint64(foundPeersCountPtr, uint64(len(peers)))
-
-			for _, peer := range peers {
-				peerID, err := nodeID(peer)
-				if err != nil {
-					logger.Error("Failed to get peer node ID", "err", err)
-					continue
-				}
-
-				err = crawler.db.UpsertNodeAddr(ctx, peerID, makeNodeAddr(peer))
-				if err != nil {
-					if !errors.Is(err, context.Canceled) {
-						logger.Error("Failed to save node", "err", err)
-					}
-					break
-				}
+				logFunc("Failed to save interrogation result", "err", saveErr)
 			}
 		}()
 	}
+	return nil
+}
+
+func (crawler *Crawler) saveInterrogationResult(
+	ctx context.Context,
+	id database.NodeID,
+	result *InterrogationResult,
+	isCompatFork *bool,
+	clientID *string,
+) error {
+	var peers []*enode.Node
+	if result != nil {
+		peers = result.Peers
+	}
+
+	for _, peer := range peers {
+		peerID, err := nodeID(peer)
+		if err != nil {
+			return fmt.Errorf("failed to get peer node ID: %w", err)
+		}
+
+		dbErr := crawler.db.UpsertNodeAddr(ctx, peerID, makeNodeAddr(peer))
+		if dbErr != nil {
+			return dbErr
+		}
+	}
+
+	if (result != nil) && (len(result.KeygenKeys) >= 15) {
+		keygenHexKeys := hexEncodePublicKeys(result.KeygenKeys)
+		dbErr := crawler.db.UpdateNeighborBucketKeys(ctx, id, keygenHexKeys)
+		if dbErr != nil {
+			return dbErr
+		}
+	}
+
+	if (result != nil) && (result.HandshakeErr != nil) {
+		dbErr := crawler.db.UpdateHandshakeError(ctx, id, result.HandshakeErr.StringCode())
+		if dbErr != nil {
+			return dbErr
+		}
+	}
+
+	if isCompatFork != nil {
+		dbErr := crawler.db.UpdateForkCompatibility(ctx, id, *isCompatFork)
+		if dbErr != nil {
+			return dbErr
+		}
+	}
+
+	if clientID != nil {
+		dbErr := crawler.db.UpdateClientID(ctx, id, *clientID)
+		if dbErr != nil {
+			return dbErr
+		}
+	}
+
 	return nil
 }
