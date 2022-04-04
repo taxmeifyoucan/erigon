@@ -14,7 +14,8 @@ import (
 )
 
 type Diplomacy struct {
-	db database.DBRetrier
+	db        database.DBRetrier
+	saveQueue *utils.TaskQueue
 
 	privateKey        *ecdsa.PrivateKey
 	concurrencyLimit  uint
@@ -28,6 +29,7 @@ type Diplomacy struct {
 
 func NewDiplomacy(
 	db database.DBRetrier,
+	saveQueue *utils.TaskQueue,
 	privateKey *ecdsa.PrivateKey,
 	concurrencyLimit uint,
 	refreshTimeout time.Duration,
@@ -38,6 +40,7 @@ func NewDiplomacy(
 ) *Diplomacy {
 	instance := Diplomacy{
 		db,
+		saveQueue,
 		privateKey,
 		concurrencyLimit,
 		refreshTimeout,
@@ -167,14 +170,9 @@ func (diplomacy *Diplomacy) Run(ctx context.Context) error {
 				*isCompatFork = false
 			}
 
-			saveErr := diplomacy.saveDiplomatResult(ctx, id, clientID, handshakeErr, isCompatFork)
-			if (saveErr != nil) && !errors.Is(saveErr, context.Canceled) {
-				logFunc := logger.Error
-				if diplomacy.db.IsConflictError(saveErr) {
-					logFunc = logger.Warn
-				}
-				logFunc("Failed to save diplomat result", "err", saveErr)
-			}
+			diplomacy.saveQueue.EnqueueTask(ctx, func(ctx context.Context) error {
+				return diplomacy.saveDiplomatResult(ctx, id, clientID, handshakeErr, isCompatFork)
+			})
 		}(id)
 	}
 	return nil

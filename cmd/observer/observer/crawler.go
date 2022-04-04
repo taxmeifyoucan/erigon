@@ -19,6 +19,7 @@ import (
 type Crawler struct {
 	transport  DiscV4Transport
 	db         database.DBRetrier
+	saveQueue  *utils.TaskQueue
 	config     CrawlerConfig
 	forkFilter forkid.Filter
 	diplomacy  *Diplomacy
@@ -46,6 +47,14 @@ func NewCrawler(
 	config CrawlerConfig,
 	logger log.Logger,
 ) (*Crawler, error) {
+	saveQueueLogFuncProvider := func(err error) func(msg string, ctx ...interface{}) {
+		if db.IsConflictError(err) {
+			return logger.Warn
+		}
+		return logger.Error
+	}
+	saveQueue := utils.NewTaskQueue("Crawler.saveQueue", config.ConcurrencyLimit*2, saveQueueLogFuncProvider)
+
 	chain := config.Chain
 	chainConfig := params.ChainConfigByChainName(chain)
 	genesisHash := params.GenesisHashByChainName(chain)
@@ -57,6 +66,7 @@ func NewCrawler(
 
 	diplomacy := NewDiplomacy(
 		database.NewDBRetrier(db, logger),
+		saveQueue,
 		config.PrivateKey,
 		config.ConcurrencyLimit,
 		config.HandshakeRefreshTimeout,
@@ -68,12 +78,17 @@ func NewCrawler(
 	instance := Crawler{
 		transport,
 		database.NewDBRetrier(db, logger),
+		saveQueue,
 		config,
 		forkFilter,
 		diplomacy,
 		logger,
 	}
 	return &instance, nil
+}
+
+func (crawler *Crawler) startSaveQueue(ctx context.Context) {
+	go crawler.saveQueue.Run(ctx)
 }
 
 func (crawler *Crawler) startDiplomacy(ctx context.Context) {
@@ -147,6 +162,7 @@ func (crawler *Crawler) selectCandidates(ctx context.Context, nodes chan<- candi
 }
 
 func (crawler *Crawler) Run(ctx context.Context) error {
+	crawler.startSaveQueue(ctx)
 	crawler.startDiplomacy(ctx)
 
 	nodes := crawler.startSelectCandidates(ctx)
@@ -290,14 +306,9 @@ func (crawler *Crawler) Run(ctx context.Context) error {
 				atomic.AddUint64(foundPeersCountPtr, uint64(len(peers)))
 			}
 
-			saveErr := crawler.saveInterrogationResult(ctx, id, result, isCompatFork, clientID)
-			if (saveErr != nil) && !errors.Is(saveErr, context.Canceled) {
-				logFunc := logger.Error
-				if crawler.db.IsConflictError(saveErr) {
-					logFunc = logger.Warn
-				}
-				logFunc("Failed to save interrogation result", "err", saveErr)
-			}
+			crawler.saveQueue.EnqueueTask(ctx, func(ctx context.Context) error {
+				return crawler.saveInterrogationResult(ctx, id, result, isCompatFork, clientID)
+			})
 		}()
 	}
 	return nil
