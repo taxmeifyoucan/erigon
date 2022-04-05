@@ -114,7 +114,7 @@ func (command *Command) withRefreshTimeout() {
 	flag := cli.DurationFlag{
 		Name:  "refresh-timeout",
 		Usage: "A timeout to wait before considering to re-crawl a node",
-		Value: 30 * time.Minute,
+		Value: 2 * 24 * time.Hour,
 	}
 	command.command.Flags().DurationVar(&command.flags.RefreshTimeout, flag.Name, flag.Value, flag.Usage)
 }
@@ -123,7 +123,7 @@ func (command *Command) withKeygenTimeout() {
 	flag := cli.DurationFlag{
 		Name:  "keygen-timeout",
 		Usage: "How much time can be used to generate node bucket keys",
-		Value: 10 * time.Second,
+		Value: 2 * time.Second,
 	}
 	command.command.Flags().DurationVar(&command.flags.KeygenTimeout, flag.Name, flag.Value, flag.Usage)
 }
@@ -132,7 +132,7 @@ func (command *Command) withKeygenConcurrency() {
 	flag := cli.UintFlag{
 		Name:  "keygen-concurrency",
 		Usage: "How many parallel goroutines can be used by the node bucket keys generator",
-		Value: uint(runtime.GOMAXPROCS(-1)),
+		Value: 2,
 	}
 	command.command.Flags().UintVar(&command.flags.KeygenConcurrency, flag.Name, flag.Value, flag.Usage)
 }
