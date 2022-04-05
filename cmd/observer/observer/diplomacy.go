@@ -22,6 +22,7 @@ type Diplomacy struct {
 	refreshTimeout    time.Duration
 	retryDelay        time.Duration
 	maxHandshakeTries uint
+	transientError    *HandshakeError
 
 	statusLogPeriod time.Duration
 	log             log.Logger
@@ -35,6 +36,7 @@ func NewDiplomacy(
 	refreshTimeout time.Duration,
 	retryDelay time.Duration,
 	maxHandshakeTries uint,
+	transientError *HandshakeError,
 	statusLogPeriod time.Duration,
 	logger log.Logger,
 ) *Diplomacy {
@@ -46,6 +48,7 @@ func NewDiplomacy(
 		refreshTimeout,
 		retryDelay,
 		maxHandshakeTries,
+		transientError,
 		statusLogPeriod,
 		logger,
 	}
@@ -71,6 +74,7 @@ func (diplomacy *Diplomacy) selectCandidates(ctx context.Context, candidatesChan
 			diplomacy.refreshTimeout,
 			diplomacy.retryDelay,
 			diplomacy.maxHandshakeTries,
+			diplomacy.transientError.StringCode(),
 			diplomacy.concurrencyLimit)
 		if err != nil {
 			if diplomacy.db.IsConflictError(err) {

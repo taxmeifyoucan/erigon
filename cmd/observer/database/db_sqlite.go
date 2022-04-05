@@ -126,7 +126,7 @@ WHERE ((handshake_updated IS NULL)
         OR ((handshake_updated < ?) AND (handshake_err IS NULL))
     	OR ((handshake_updated < ?) AND (handshake_err IS NOT NULL)))
 	AND ((compat_fork == TRUE) OR (compat_fork IS NULL))
-	AND (handshake_try <= ?)
+	AND ((handshake_try <= ?) OR (handshake_err = ?))
 ORDER BY handshake_updated
 LIMIT ?
 `
@@ -152,7 +152,7 @@ SELECT id FROM nodes
 WHERE ((taken_last IS NULL) OR (taken_last < ?))
 	AND ((compat_fork == TRUE) OR (compat_fork IS NULL))
     AND (ping_try <= ?)
-	AND (handshake_try <= ?)
+	AND ((handshake_try <= ?) OR (handshake_err = ?))
 ORDER BY taken_last
 LIMIT ?
 `
@@ -372,6 +372,7 @@ func (db *DBSQLite) FindHandshakeCandidates(
 	minUnusedOKDuration time.Duration,
 	minUnusedErrDuration time.Duration,
 	maxHandshakeTries uint,
+	transientErr string,
 	limit uint,
 ) ([]NodeID, error) {
 	updatedOKBefore := time.Now().Add(-minUnusedOKDuration).Unix()
@@ -382,6 +383,7 @@ func (db *DBSQLite) FindHandshakeCandidates(
 		updatedOKBefore,
 		updatedErrBefore,
 		maxHandshakeTries,
+		transientErr,
 		limit)
 	if err != nil {
 		return nil, fmt.Errorf("FindHandshakeCandidates failed to query candidates: %w", err)
@@ -430,6 +432,7 @@ func (db *DBSQLite) TakeHandshakeCandidates(
 	minUnusedOKDuration time.Duration,
 	minUnusedErrDuration time.Duration,
 	maxHandshakeTries uint,
+	transientErr string,
 	limit uint,
 ) ([]NodeID, error) {
 	tx, err := db.db.BeginTx(ctx, nil)
@@ -437,7 +440,13 @@ func (db *DBSQLite) TakeHandshakeCandidates(
 		return nil, fmt.Errorf("TakeHandshakeCandidates failed to start transaction: %w", err)
 	}
 
-	ids, err := db.FindHandshakeCandidates(ctx, minUnusedOKDuration, minUnusedErrDuration, maxHandshakeTries, limit)
+	ids, err := db.FindHandshakeCandidates(
+		ctx,
+		minUnusedOKDuration,
+		minUnusedErrDuration,
+		maxHandshakeTries,
+		transientErr,
+		limit)
 	if err != nil {
 		_ = tx.Rollback()
 		return nil, err
@@ -493,9 +502,23 @@ func (db *DBSQLite) FindNeighborBucketKeys(ctx context.Context, id NodeID) ([]st
 	return strings.Split(keysStr.String, ","), nil
 }
 
-func (db *DBSQLite) FindCandidates(ctx context.Context, minUnusedDuration time.Duration, maxPingTries uint, maxHandshakeTries uint, limit uint) ([]NodeID, error) {
+func (db *DBSQLite) FindCandidates(
+	ctx context.Context,
+	minUnusedDuration time.Duration,
+	maxPingTries uint,
+	maxHandshakeTries uint,
+	transientHandshakeErr string,
+	limit uint,
+) ([]NodeID, error) {
 	takenLastBefore := time.Now().Add(-minUnusedDuration).Unix()
-	cursor, err := db.db.QueryContext(ctx, sqlFindCandidates, takenLastBefore, maxPingTries, maxHandshakeTries, limit)
+	cursor, err := db.db.QueryContext(
+		ctx,
+		sqlFindCandidates,
+		takenLastBefore,
+		maxPingTries,
+		maxHandshakeTries,
+		transientHandshakeErr,
+		limit)
 	if err != nil {
 		return nil, fmt.Errorf("FindCandidates failed to query candidates: %w", err)
 	}
@@ -538,13 +561,26 @@ func (db *DBSQLite) MarkTakenNodes(ctx context.Context, ids []NodeID) error {
 	return nil
 }
 
-func (db *DBSQLite) TakeCandidates(ctx context.Context, minUnusedDuration time.Duration, maxPingTries uint, maxHandshakeTries uint, limit uint) ([]NodeID, error) {
+func (db *DBSQLite) TakeCandidates(
+	ctx context.Context,
+	minUnusedDuration time.Duration,
+	maxPingTries uint,
+	maxHandshakeTries uint,
+	transientHandshakeErr string,
+	limit uint,
+) ([]NodeID, error) {
 	tx, err := db.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("TakeCandidates failed to start transaction: %w", err)
 	}
 
-	ids, err := db.FindCandidates(ctx, minUnusedDuration, maxPingTries, maxHandshakeTries, limit)
+	ids, err := db.FindCandidates(
+		ctx,
+		minUnusedDuration,
+		maxPingTries,
+		maxHandshakeTries,
+		transientHandshakeErr,
+		limit)
 	if err != nil {
 		_ = tx.Rollback()
 		return nil, err

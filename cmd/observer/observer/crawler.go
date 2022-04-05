@@ -8,6 +8,7 @@ import (
 	"github.com/ledgerwatch/erigon/cmd/observer/database"
 	"github.com/ledgerwatch/erigon/cmd/observer/utils"
 	"github.com/ledgerwatch/erigon/core/forkid"
+	"github.com/ledgerwatch/erigon/p2p"
 	"github.com/ledgerwatch/erigon/p2p/enode"
 	"github.com/ledgerwatch/erigon/params"
 	"github.com/ledgerwatch/log/v3"
@@ -17,13 +18,18 @@ import (
 )
 
 type Crawler struct {
-	transport  DiscV4Transport
-	db         database.DBRetrier
-	saveQueue  *utils.TaskQueue
+	transport DiscV4Transport
+
+	db        database.DBRetrier
+	saveQueue *utils.TaskQueue
+
 	config     CrawlerConfig
 	forkFilter forkid.Filter
-	diplomacy  *Diplomacy
-	log        log.Logger
+
+	diplomacy               *Diplomacy
+	handshakeTransientError *HandshakeError
+
+	log log.Logger
 }
 
 type CrawlerConfig struct {
@@ -66,6 +72,8 @@ func NewCrawler(
 
 	forkFilter := forkid.NewStaticFilter(chainConfig, *genesisHash)
 
+	transientHandshakeError := NewHandshakeError(HandshakeErrorIDDisconnect, p2p.DiscTooManyPeers, uint64(p2p.DiscTooManyPeers))
+
 	diplomacy := NewDiplomacy(
 		database.NewDBRetrier(db, logger),
 		saveQueue,
@@ -74,6 +82,7 @@ func NewCrawler(
 		config.HandshakeRefreshTimeout,
 		config.HandshakeRetryDelay,
 		config.HandshakeMaxTries,
+		transientHandshakeError,
 		config.StatusLogPeriod,
 		logger)
 
@@ -84,6 +93,7 @@ func NewCrawler(
 		config,
 		forkFilter,
 		diplomacy,
+		transientHandshakeError,
 		logger,
 	}
 	return &instance, nil
@@ -139,6 +149,7 @@ func (crawler *Crawler) selectCandidates(ctx context.Context, nodes chan<- candi
 			crawler.config.RefreshTimeout,
 			crawler.config.MaxPingTries,
 			crawler.config.HandshakeMaxTries,
+			crawler.handshakeTransientError.StringCode(),
 			crawler.config.ConcurrencyLimit)
 		if err != nil {
 			if crawler.db.IsConflictError(err) {
