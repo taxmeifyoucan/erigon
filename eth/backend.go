@@ -29,6 +29,7 @@ import (
 	"sync"
 	"time"
 
+	lru "github.com/hashicorp/golang-lru"
 	"github.com/holiman/uint256"
 	libcommon "github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/direct"
@@ -82,6 +83,8 @@ import (
 	"google.golang.org/grpc/credentials"
 )
 
+const StateCacheSize = 3_000_000
+
 // Config contains the configuration options of the ETH protocol.
 // Deprecated: use ethconfig.Config instead.
 type Config = ethconfig.Config
@@ -125,6 +128,8 @@ type Ethereum struct {
 
 	waitForStageLoopStop chan struct{}
 	waitForMiningStop    chan struct{}
+	// State cache for caching reads in Execution stage
+	stateCache *lru.Cache
 
 	txPool2DB               kv.RwDB
 	txPool2                 *txpool2.TxPool
@@ -208,7 +213,10 @@ func New(stack *node.Node, config *ethconfig.Config, txpoolCfg txpool2.Config, l
 		},
 	}
 	backend.gasPrice, _ = uint256.FromBig(config.Miner.GasPrice)
-
+	backend.stateCache, err = lru.New(StateCacheSize)
+	if err != nil {
+		return nil, err
+	}
 	var consensusConfig interface{}
 
 	if chainConfig.Clique != nil {
@@ -485,7 +493,7 @@ func New(stack *node.Node, config *ethconfig.Config, txpoolCfg txpool2.Config, l
 	backend.stagedSync, err = stages2.NewStagedSync(backend.sentryCtx, backend.log, backend.chainDB,
 		stack.Config().P2P, *config, chainConfig.TerminalTotalDifficulty,
 		backend.sentryControlServer, tmpdir, backend.notifications,
-		backend.downloaderClient, allSnapshots)
+		backend.downloaderClient, allSnapshots, backend.stateCache)
 	if err != nil {
 		return nil, err
 	}

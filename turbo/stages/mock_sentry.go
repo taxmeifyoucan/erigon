@@ -329,6 +329,7 @@ func MockWithEverything(t *testing.T, gspec *core.Genesis, key *ecdsa.PrivateKey
 				cfg.StateStream,
 				mock.tmpdir,
 				blockReader,
+				nil,
 			),
 			stagedsync.StageTranspileCfg(mock.DB, cfg.BatchSize, mock.ChainConfig),
 			stagedsync.StageHashStateCfg(mock.DB, mock.tmpdir),

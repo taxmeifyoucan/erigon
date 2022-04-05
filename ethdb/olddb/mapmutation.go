@@ -8,6 +8,7 @@ import (
 	"time"
 	"unsafe"
 
+	lru "github.com/hashicorp/golang-lru"
 	"github.com/ledgerwatch/erigon-lib/etl"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon/ethdb"
@@ -22,6 +23,7 @@ type mapmutation struct {
 	mu     sync.RWMutex
 	size   int
 	count  uint64
+	cache  *lru.Cache
 	tmpdir string
 }
 
@@ -33,7 +35,7 @@ type mapmutation struct {
 // defer batch.Rollback()
 // ... some calculations on `batch`
 // batch.Commit()
-func NewHashBatch(tx kv.RwTx, quit <-chan struct{}, tmpdir string) *mapmutation {
+func NewHashBatch(tx kv.RwTx, quit <-chan struct{}, cache *lru.Cache, tmpdir string) *mapmutation {
 	clean := func() {}
 	if quit == nil {
 		ch := make(chan struct{})
@@ -46,6 +48,7 @@ func NewHashBatch(tx kv.RwTx, quit <-chan struct{}, tmpdir string) *mapmutation 
 		quit:   quit,
 		clean:  clean,
 		tmpdir: tmpdir,
+		cache:  cache,
 	}
 }
 
@@ -56,9 +59,19 @@ func (m *mapmutation) RwKV() kv.RwDB {
 	return nil
 }
 
+func createCacheKey(table string, key []byte) string {
+	return string(append([]byte(table), key...))
+}
+
 func (m *mapmutation) getMem(table string, key []byte) ([]byte, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+	if m.cache != nil {
+		value, ok := m.cache.Get(createCacheKey(table, key))
+		if ok {
+			return value.([]byte), ok
+		}
+	}
 	if _, ok := m.puts[table]; !ok {
 		return nil, false
 	}
@@ -67,6 +80,7 @@ func (m *mapmutation) getMem(table string, key []byte) ([]byte, bool) {
 	if value, ok = m.puts[table][*(*string)(unsafe.Pointer(&key))]; !ok {
 		return nil, false
 	}
+
 	return value, ok
 }
 
@@ -122,9 +136,12 @@ func (m *mapmutation) GetOne(table string, key []byte) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-
+		if m.cache != nil {
+			m.cache.Add(createCacheKey(table, key), value)
+		}
 		return value, nil
 	}
+
 	return nil, nil
 }
 
@@ -183,11 +200,15 @@ func (m *mapmutation) Put(table string, key []byte, value []byte) error {
 	if _, ok = m.puts[table][*(*string)(unsafe.Pointer(&key))]; !ok {
 		m.size += len(value) - len(m.puts[table][*(*string)(unsafe.Pointer(&key))])
 		m.puts[table][*(*string)(unsafe.Pointer(&key))] = value
-		return nil
+		m.count++
+	} else {
+		m.puts[table][*(*string)(unsafe.Pointer(&key))] = value
+		m.size += len(key) + len(value)
 	}
-	m.puts[table][*(*string)(unsafe.Pointer(&key))] = value
-	m.size += len(key) + len(value)
-	m.count++
+	if m.cache != nil {
+		m.cache.Add(createCacheKey(table, key), value)
+	}
+
 	return nil
 }
 

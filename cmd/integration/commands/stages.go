@@ -11,10 +11,12 @@ import (
 	"sync"
 
 	"github.com/c2h5oh/datasize"
+	lru "github.com/hashicorp/golang-lru"
 	common2 "github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/common/dir"
 	"github.com/ledgerwatch/erigon-lib/etl"
 	"github.com/ledgerwatch/erigon-lib/kv"
+	"github.com/ledgerwatch/erigon/eth"
 	"github.com/ledgerwatch/erigon/turbo/snapshotsync/snapshotsynccli"
 	"github.com/ledgerwatch/log/v3"
 	"github.com/ledgerwatch/secp256k1"
@@ -634,8 +636,11 @@ func stageExec(db kv.RwDB, ctx context.Context) error {
 		pm.CallTraces = prune.Distance(s.BlockNumber - pruneTo)
 		pm.TxIndex = prune.Distance(s.BlockNumber - pruneTo)
 	}
-
-	cfg := stagedsync.StageExecuteBlocksCfg(db, pm, batchSize, nil, chainConfig, engine, vmConfig, nil, false, tmpdir, getBlockReader(chainConfig))
+	cache, err := lru.New(eth.StateCacheSize)
+	if err != nil {
+		return err
+	}
+	cfg := stagedsync.StageExecuteBlocksCfg(db, pm, batchSize, nil, chainConfig, engine, vmConfig, nil, false, tmpdir, getBlockReader(chainConfig), cache)
 	if unwind > 0 {
 		u := sync.NewUnwindState(stages.Execution, s.BlockNumber-unwind, s.BlockNumber)
 		err := stagedsync.UnwindExecutionStage(u, s, nil, ctx, cfg, false)
@@ -657,7 +662,7 @@ func stageExec(db kv.RwDB, ctx context.Context) error {
 		return nil
 	}
 
-	err := stagedsync.SpawnExecuteBlocksStage(s, sync, nil, block, ctx, cfg, false)
+	err = stagedsync.SpawnExecuteBlocksStage(s, sync, nil, block, ctx, cfg, false)
 	if err != nil {
 		return err
 	}
@@ -1163,10 +1168,13 @@ func newSync(ctx context.Context, db kv.RwDB, miningConfig *params.MiningConfig)
 		}
 		cfg.SnapshotDir = snDir
 	}
-
+	cache, err := lru.New(eth.StateCacheSize)
+	if err != nil {
+		panic(err)
+	}
 	sync, err := stages2.NewStagedSync(context.Background(), logger, db, p2p.Config{}, cfg,
 		chainConfig.TerminalTotalDifficulty, sentryControlServer, tmpdir,
-		&stagedsync.Notifications{}, nil, allSn,
+		&stagedsync.Notifications{}, nil, allSn, cache,
 	)
 	if err != nil {
 		panic(err)

@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"time"
 
+	lru "github.com/hashicorp/golang-lru"
 	"github.com/holiman/uint256"
 	libcommon "github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/common/dbg"
@@ -250,6 +251,7 @@ func NewStagedSync(
 	notifications *stagedsync.Notifications,
 	snapshotDownloader proto_downloader.DownloaderClient,
 	allSnapshots *snapshotsync.RoSnapshots,
+	stateCache *lru.Cache,
 ) (*stagedsync.Sync, error) {
 	var blockReader interfaces.FullBlockReader
 	if cfg.Snapshot.Enabled {
@@ -308,6 +310,7 @@ func NewStagedSync(
 				cfg.StateStream,
 				tmpdir,
 				blockReader,
+				stateCache,
 			),
 			stagedsync.StageTranspileCfg(db, cfg.BatchSize, controlServer.ChainConfig),
 			stagedsync.StageHashStateCfg(db, tmpdir),

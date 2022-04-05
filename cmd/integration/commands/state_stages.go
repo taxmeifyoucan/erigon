@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/c2h5oh/datasize"
+	lru "github.com/hashicorp/golang-lru"
 	common2 "github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/spf13/cobra"
@@ -27,6 +28,7 @@ import (
 	"github.com/ledgerwatch/erigon/core/state"
 	"github.com/ledgerwatch/erigon/core/types"
 	"github.com/ledgerwatch/erigon/core/vm"
+	"github.com/ledgerwatch/erigon/eth"
 	"github.com/ledgerwatch/erigon/eth/ethconfig"
 	"github.com/ledgerwatch/erigon/eth/integrity"
 	"github.com/ledgerwatch/erigon/eth/stagedsync"
@@ -183,8 +185,11 @@ func syncBySmallSteps(db kv.RwDB, miningConfig params.MiningConfig, ctx context.
 	}
 
 	stateStages.DisableStages(stages.Headers, stages.BlockHashes, stages.Bodies, stages.Senders)
-
-	execCfg := stagedsync.StageExecuteBlocksCfg(db, pm, batchSize, changeSetHook, chainConfig, engine, vmConfig, nil, false, tmpDir, getBlockReader(chainConfig))
+	cache, err := lru.New(eth.StateCacheSize)
+	if err != nil {
+		return err
+	}
+	execCfg := stagedsync.StageExecuteBlocksCfg(db, pm, batchSize, changeSetHook, chainConfig, engine, vmConfig, nil, false, tmpDir, getBlockReader(chainConfig), cache)
 
 	execUntilFunc := func(execToBlock uint64) func(firstCycle bool, badBlockUnwind bool, stageState *stagedsync.StageState, unwinder stagedsync.Unwinder, tx kv.RwTx) error {
 		return func(firstCycle bool, badBlockUnwind bool, s *stagedsync.StageState, unwinder stagedsync.Unwinder, tx kv.RwTx) error {
@@ -493,8 +498,11 @@ func loopExec(db kv.RwDB, ctx context.Context, unwind uint64) error {
 
 	from := progress(tx, stages.Execution)
 	to := from + unwind
-
-	cfg := stagedsync.StageExecuteBlocksCfg(db, pm, batchSize, nil, chainConfig, engine, vmConfig, nil, false, tmpdir, getBlockReader(chainConfig))
+	cache, err := lru.New(eth.StateCacheSize)
+	if err != nil {
+		return err
+	}
+	cfg := stagedsync.StageExecuteBlocksCfg(db, pm, batchSize, nil, chainConfig, engine, vmConfig, nil, false, tmpdir, getBlockReader(chainConfig), cache)
 
 	// set block limit of execute stage
 	sync.MockExecFunc(stages.Execution, func(firstCycle bool, badBlockUnwind bool, stageState *stagedsync.StageState, unwinder stagedsync.Unwinder, tx kv.RwTx) error {

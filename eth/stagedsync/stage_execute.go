@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/c2h5oh/datasize"
+	lru "github.com/hashicorp/golang-lru"
 	libcommon "github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/common/length"
 	"github.com/ledgerwatch/erigon-lib/etl"
@@ -56,6 +57,7 @@ type ExecuteBlockCfg struct {
 	stateStream   bool
 	accumulator   *shards.Accumulator
 	blockReader   interfaces.FullBlockReader
+	stateCache    *lru.Cache
 }
 
 func StageExecuteBlocksCfg(
@@ -70,6 +72,7 @@ func StageExecuteBlocksCfg(
 	stateStream bool,
 	tmpdir string,
 	blockReader interfaces.FullBlockReader,
+	stateCache *lru.Cache,
 ) ExecuteBlockCfg {
 	return ExecuteBlockCfg{
 		db:            kv,
@@ -82,6 +85,7 @@ func StageExecuteBlocksCfg(
 		tmpdir:        tmpdir,
 		accumulator:   accumulator,
 		stateStream:   stateStream,
+		stateCache:    stateCache,
 		blockReader:   blockReader,
 	}
 }
@@ -220,7 +224,7 @@ func SpawnExecuteBlocksStage(s *StageState, u Unwinder, tx kv.RwTx, toBlock uint
 
 	var batch ethdb.DbWithPendingMutations
 	// state is stored through ethdb batches
-	batch = olddb.NewHashBatch(tx, quit, cfg.tmpdir)
+	batch = olddb.NewHashBatch(tx, quit, cfg.stateCache, cfg.tmpdir)
 	defer batch.Rollback()
 	// changes are stored through memory buffer
 	logEvery := time.NewTicker(logInterval)
@@ -232,7 +236,7 @@ func SpawnExecuteBlocksStage(s *StageState, u Unwinder, tx kv.RwTx, toBlock uint
 	var gas uint64             // used for logs
 	var currentStateGas uint64 // used for batch commits of state
 	// Transform batch_size limit into Ggas
-	gasState := uint64(cfg.batchSize) * uint64(datasize.KB) * 3
+	gasState := uint64(cfg.batchSize) * uint64(datasize.KB)
 
 	startGasUsed, err := rawdb.ReadCumulativeGasUsed(tx, s.BlockNumber)
 	if err != nil {
@@ -302,7 +306,7 @@ Loop:
 				// TODO: This creates stacked up deferrals
 				defer tx.Rollback()
 			}
-			batch = olddb.NewHashBatch(tx, quit, cfg.tmpdir)
+			batch = olddb.NewHashBatch(tx, quit, cfg.stateCache, cfg.tmpdir)
 			// TODO: This creates stacked up deferrals
 			defer batch.Rollback()
 		}
