@@ -10,6 +10,9 @@ import (
 )
 
 func StatusLoggerLoop(ctx context.Context, db database.DB, period time.Duration, logger log.Logger) {
+	var prevTotalCount uint
+	var prevDistinctIPCount uint
+
 	for ctx.Err() == nil {
 		utils.Sleep(ctx, period)
 
@@ -29,6 +32,12 @@ func StatusLoggerLoop(ctx context.Context, db database.DB, period time.Duration,
 			continue
 		}
 
+		if (totalCount == prevTotalCount) && (distinctIPCount == prevDistinctIPCount) {
+			continue
+		}
+
 		logger.Info("Status", "totalCount", totalCount, "distinctIPCount", distinctIPCount)
+		prevTotalCount = totalCount
+		prevDistinctIPCount = distinctIPCount
 	}
 }
