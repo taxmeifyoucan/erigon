@@ -16,15 +16,16 @@ import (
 )
 
 type mapmutation struct {
-	puts   map[string]map[string][]byte
-	db     kv.RwTx
-	quit   <-chan struct{}
-	clean  func()
-	mu     sync.RWMutex
-	size   int
-	count  uint64
-	cache  *lru.Cache
-	tmpdir string
+	puts    map[string]map[string][]byte
+	tableId map[string]byte
+	db      kv.RwTx
+	quit    <-chan struct{}
+	clean   func()
+	mu      sync.RWMutex
+	size    int
+	count   uint64
+	cache   *lru.Cache
+	tmpdir  string
 }
 
 // NewBatch - starts in-mem batch
@@ -43,12 +44,13 @@ func NewHashBatch(tx kv.RwTx, quit <-chan struct{}, cache *lru.Cache, tmpdir str
 		quit = ch
 	}
 	return &mapmutation{
-		db:     tx,
-		puts:   make(map[string]map[string][]byte),
-		quit:   quit,
-		clean:  clean,
-		tmpdir: tmpdir,
-		cache:  cache,
+		db:      tx,
+		puts:    make(map[string]map[string][]byte),
+		quit:    quit,
+		clean:   clean,
+		tmpdir:  tmpdir,
+		cache:   cache,
+		tableId: make(map[string]byte),
 	}
 }
 
@@ -59,19 +61,13 @@ func (m *mapmutation) RwKV() kv.RwDB {
 	return nil
 }
 
-func createCacheKey(table string, key []byte) string {
-	return string(append([]byte(table), key...))
+func createCacheKey(id byte, key []byte) string {
+	return string(append(key, id))
 }
 
 func (m *mapmutation) getMem(table string, key []byte) ([]byte, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	if m.cache != nil {
-		value, ok := m.cache.Get(createCacheKey(table, key))
-		if ok {
-			return value.([]byte), ok
-		}
-	}
 	if _, ok := m.puts[table]; !ok {
 		return nil, false
 	}
@@ -81,6 +77,12 @@ func (m *mapmutation) getMem(table string, key []byte) ([]byte, bool) {
 		return nil, false
 	}
 
+	if m.cache != nil {
+		value, ok := m.cache.Get(createCacheKey(m.tableId[table], key))
+		if ok {
+			return value.([]byte), ok
+		}
+	}
 	return value, ok
 }
 
@@ -137,7 +139,13 @@ func (m *mapmutation) GetOne(table string, key []byte) ([]byte, error) {
 			return nil, err
 		}
 		if m.cache != nil {
-			m.cache.Add(createCacheKey(table, key), value)
+			var id byte
+			var ok bool
+			if id, ok = m.tableId[table]; !ok {
+				id = byte(len(m.tableId))
+				m.tableId[table] = id
+			}
+			m.cache.Add(createCacheKey(id, key), value)
 		}
 		return value, nil
 	}
@@ -168,19 +176,8 @@ func (m *mapmutation) Last(table string) ([]byte, []byte, error) {
 	return c.Last()
 }
 
-func (m *mapmutation) hasMem(table string, key []byte) bool {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	if _, ok := m.puts[table]; !ok {
-		return false
-	}
-
-	_, ok := m.puts[table][*(*string)(unsafe.Pointer(&key))]
-	return ok
-}
-
 func (m *mapmutation) Has(table string, key []byte) (bool, error) {
-	if m.hasMem(table, key) {
+	if _, ok := m.getMem(table, key); ok {
 		return true, nil
 	}
 	if m.db != nil {
@@ -195,18 +192,25 @@ func (m *mapmutation) Put(table string, key []byte, value []byte) error {
 
 	if _, ok := m.puts[table]; !ok {
 		m.puts[table] = make(map[string][]byte)
+		m.tableId[table] = byte(len(m.tableId))
 	}
 	var ok bool
-	if _, ok = m.puts[table][*(*string)(unsafe.Pointer(&key))]; !ok {
-		m.size += len(value) - len(m.puts[table][*(*string)(unsafe.Pointer(&key))])
-		m.puts[table][*(*string)(unsafe.Pointer(&key))] = value
+	keyString := *(*string)(unsafe.Pointer(&key))
+	if _, ok = m.puts[table][keyString]; !ok {
+		m.size += len(value) - len(m.puts[table][keyString])
+		m.puts[table][keyString] = value
 		m.count++
 	} else {
-		m.puts[table][*(*string)(unsafe.Pointer(&key))] = value
+		m.puts[table][keyString] = value
 		m.size += len(key) + len(value)
 	}
 	if m.cache != nil {
-		m.cache.Add(createCacheKey(table, key), value)
+		var id byte
+		if id, ok = m.tableId[table]; !ok {
+			id = byte(len(m.tableId))
+			m.tableId[table] = id
+		}
+		m.cache.Add(createCacheKey(id, key), value)
 	}
 
 	return nil
@@ -266,8 +270,6 @@ func (m *mapmutation) doCommit(tx kv.RwTx) error {
 				progress := fmt.Sprintf("%.1fM/%.1fM", float64(count)/1_000_000, total/1_000_000)
 				log.Info("Write to db", "progress", progress, "current table", table)
 				tx.CollectMetrics()
-			case <-m.quit:
-				return nil
 			}
 		}
 		if err := collector.Load(m.db, table, etl.IdentityLoadFunc, etl.TransformArgs{Quit: m.quit}); err != nil {
