@@ -12,19 +12,29 @@ import (
 )
 
 type CommandFlags struct {
-	DataDir            string
-	Chain              string
-	ListenPort         int
-	NATDesc            string
-	NetRestrict        string
-	NodeKeyFile        string
-	NodeKeyHex         string
-	Bootnodes          string
+	DataDir         string
+	StatusLogPeriod time.Duration
+
+	Chain     string
+	Bootnodes string
+
+	ListenPort  int
+	NATDesc     string
+	NetRestrict string
+
+	NodeKeyFile string
+	NodeKeyHex  string
+
 	CrawlerConcurrency uint
 	RefreshTimeout     time.Duration
-	KeygenTimeout      time.Duration
-	KeygenConcurrency  uint
-	StatusLogPeriod    time.Duration
+	MaxPingTries       uint
+
+	KeygenTimeout     time.Duration
+	KeygenConcurrency uint
+
+	HandshakeRefreshTimeout time.Duration
+	HandshakeRetryDelay     time.Duration
+	HandshakeMaxTries       uint
 }
 
 type Command struct {
@@ -43,19 +53,30 @@ func NewCommand() *Command {
 	instance := Command{
 		command: command,
 	}
+
 	instance.withDatadir()
+	instance.withStatusLogPeriod()
+
 	instance.withChain()
+	instance.withBootnodes()
+
 	instance.withListenPort()
 	instance.withNAT()
 	instance.withNetRestrict()
+
 	instance.withNodeKeyFile()
 	instance.withNodeKeyHex()
-	instance.withBootnodes()
+
 	instance.withCrawlerConcurrency()
 	instance.withRefreshTimeout()
+	instance.withMaxPingTries()
+
 	instance.withKeygenTimeout()
 	instance.withKeygenConcurrency()
-	instance.withStatusLogPeriod()
+
+	instance.withHandshakeRefreshTimeout()
+	instance.withHandshakeRetryDelay()
+	instance.withHandshakeMaxTries()
 
 	return &instance
 }
@@ -66,9 +87,23 @@ func (command *Command) withDatadir() {
 	must(command.command.MarkFlagDirname(utils.DataDirFlag.Name))
 }
 
+func (command *Command) withStatusLogPeriod() {
+	flag := cli.DurationFlag{
+		Name:  "status-log-period",
+		Usage: "How often to log status summaries",
+		Value: 10 * time.Second,
+	}
+	command.command.Flags().DurationVar(&command.flags.StatusLogPeriod, flag.Name, flag.Value, flag.Usage)
+}
+
 func (command *Command) withChain() {
 	flag := utils.ChainFlag
 	command.command.Flags().StringVar(&command.flags.Chain, flag.Name, flag.Value, flag.Usage)
+}
+
+func (command *Command) withBootnodes() {
+	flag := utils.BootnodesFlag
+	command.command.Flags().StringVar(&command.flags.Bootnodes, flag.Name, flag.Value, flag.Usage)
 }
 
 func (command *Command) withListenPort() {
@@ -96,11 +131,6 @@ func (command *Command) withNodeKeyHex() {
 	command.command.Flags().StringVar(&command.flags.NodeKeyHex, flag.Name, flag.Value, flag.Usage)
 }
 
-func (command *Command) withBootnodes() {
-	flag := utils.BootnodesFlag
-	command.command.Flags().StringVar(&command.flags.Bootnodes, flag.Name, flag.Value, flag.Usage)
-}
-
 func (command *Command) withCrawlerConcurrency() {
 	flag := cli.UintFlag{
 		Name:  "crawler-concurrency",
@@ -117,6 +147,15 @@ func (command *Command) withRefreshTimeout() {
 		Value: 2 * 24 * time.Hour,
 	}
 	command.command.Flags().DurationVar(&command.flags.RefreshTimeout, flag.Name, flag.Value, flag.Usage)
+}
+
+func (command *Command) withMaxPingTries() {
+	flag := cli.UintFlag{
+		Name:  "max-ping-tries",
+		Usage: "How many times to retry PING before abandoning a candidate",
+		Value: 3,
+	}
+	command.command.Flags().UintVar(&command.flags.MaxPingTries, flag.Name, flag.Value, flag.Usage)
 }
 
 func (command *Command) withKeygenTimeout() {
@@ -137,13 +176,31 @@ func (command *Command) withKeygenConcurrency() {
 	command.command.Flags().UintVar(&command.flags.KeygenConcurrency, flag.Name, flag.Value, flag.Usage)
 }
 
-func (command *Command) withStatusLogPeriod() {
+func (command *Command) withHandshakeRefreshTimeout() {
 	flag := cli.DurationFlag{
-		Name:  "status-log-period",
-		Usage: "How often to log status summaries",
-		Value: 10 * time.Second,
+		Name:  "handshake-refresh-timeout",
+		Usage: "When a node's handshake data is considered expired and needs to be re-crawled",
+		Value: 20 * 24 * time.Hour,
 	}
-	command.command.Flags().DurationVar(&command.flags.StatusLogPeriod, flag.Name, flag.Value, flag.Usage)
+	command.command.Flags().DurationVar(&command.flags.HandshakeRefreshTimeout, flag.Name, flag.Value, flag.Usage)
+}
+
+func (command *Command) withHandshakeRetryDelay() {
+	flag := cli.DurationFlag{
+		Name:  "handshake-retry-delay",
+		Usage: "How long to wait before retrying a failed handshake",
+		Value: 4 * time.Hour,
+	}
+	command.command.Flags().DurationVar(&command.flags.HandshakeRetryDelay, flag.Name, flag.Value, flag.Usage)
+}
+
+func (command *Command) withHandshakeMaxTries() {
+	flag := cli.UintFlag{
+		Name:  "handshake-max-tries",
+		Usage: "How many times to retry handshake before abandoning a candidate",
+		Value: 3,
+	}
+	command.command.Flags().UintVar(&command.flags.HandshakeMaxTries, flag.Name, flag.Value, flag.Usage)
 }
 
 func (command *Command) ExecuteContext(ctx context.Context, runFunc func(ctx context.Context, flags CommandFlags) error) error {

@@ -20,7 +20,7 @@ type Diplomacy struct {
 	privateKey        *ecdsa.PrivateKey
 	concurrencyLimit  uint
 	refreshTimeout    time.Duration
-	retryTimeout      time.Duration
+	retryDelay        time.Duration
 	maxHandshakeTries uint
 
 	statusLogPeriod time.Duration
@@ -33,7 +33,7 @@ func NewDiplomacy(
 	privateKey *ecdsa.PrivateKey,
 	concurrencyLimit uint,
 	refreshTimeout time.Duration,
-	retryTimeout time.Duration,
+	retryDelay time.Duration,
 	maxHandshakeTries uint,
 	statusLogPeriod time.Duration,
 	logger log.Logger,
@@ -44,7 +44,7 @@ func NewDiplomacy(
 		privateKey,
 		concurrencyLimit,
 		refreshTimeout,
-		retryTimeout,
+		retryDelay,
 		maxHandshakeTries,
 		statusLogPeriod,
 		logger,
@@ -69,7 +69,7 @@ func (diplomacy *Diplomacy) selectCandidates(ctx context.Context, candidatesChan
 		candidates, err := diplomacy.db.TakeHandshakeCandidates(
 			ctx,
 			diplomacy.refreshTimeout,
-			diplomacy.retryTimeout,
+			diplomacy.retryDelay,
 			diplomacy.maxHandshakeTries,
 			diplomacy.concurrencyLimit)
 		if err != nil {

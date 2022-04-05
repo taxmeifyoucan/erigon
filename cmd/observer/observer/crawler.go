@@ -36,7 +36,8 @@ type CrawlerConfig struct {
 	StatusLogPeriod  time.Duration
 
 	HandshakeRefreshTimeout time.Duration
-	MaxHandshakeTries       uint
+	HandshakeRetryDelay     time.Duration
+	HandshakeMaxTries       uint
 
 	KeygenTimeout     time.Duration
 	KeygenConcurrency uint
@@ -71,8 +72,8 @@ func NewCrawler(
 		config.PrivateKey,
 		config.ConcurrencyLimit,
 		config.HandshakeRefreshTimeout,
-		4*time.Hour,
-		config.MaxHandshakeTries,
+		config.HandshakeRetryDelay,
+		config.HandshakeMaxTries,
 		config.StatusLogPeriod,
 		logger)
 
@@ -137,7 +138,7 @@ func (crawler *Crawler) selectCandidates(ctx context.Context, nodes chan<- candi
 			ctx,
 			crawler.config.RefreshTimeout,
 			crawler.config.MaxPingTries,
-			crawler.config.MaxHandshakeTries,
+			crawler.config.HandshakeMaxTries,
 			crawler.config.ConcurrencyLimit)
 		if err != nil {
 			if crawler.db.IsConflictError(err) {
