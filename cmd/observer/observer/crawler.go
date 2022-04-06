@@ -148,8 +148,6 @@ func (crawler *Crawler) selectCandidates(ctx context.Context, nodes chan<- candi
 			ctx,
 			crawler.config.RefreshTimeout,
 			crawler.config.MaxPingTries,
-			crawler.config.HandshakeMaxTries,
-			crawler.handshakeTransientError.StringCode(),
 			crawler.config.ConcurrencyLimit)
 		if err != nil {
 			if crawler.db.IsConflictError(err) {
@@ -227,21 +225,34 @@ func (crawler *Crawler) Run(ctx context.Context) error {
 		nodeDesc := node.URLv4()
 		logger := crawler.log.New("node", nodeDesc)
 
-		handshakeLastTry, err := crawler.db.FindHandshakeLastTry(ctx, id)
+		handshakeNextRetryTime, err := crawler.db.FindHandshakeRetryTime(ctx, id)
 		if err != nil {
 			if crawler.db.IsConflictError(err) {
-				crawler.log.Warn("Failed to get handshake last try", "err", err)
+				crawler.log.Warn("Failed to get handshake next retry time", "err", err)
 				sem.Release(1)
 				continue
 			}
-			return fmt.Errorf("failed to get handshake last try: %w", err)
+			return fmt.Errorf("failed to get handshake next retry time: %w", err)
+		}
+
+		handshakeLastErrors, err := crawler.db.FindHandshakeLastErrors(ctx, id, crawler.config.HandshakeMaxTries)
+		if err != nil {
+			if crawler.db.IsConflictError(err) {
+				crawler.log.Warn("Failed to get handshake last errors", "err", err)
+				sem.Release(1)
+				continue
+			}
+			return fmt.Errorf("failed to get handshake last errors: %w", err)
 		}
 
 		diplomat := NewDiplomat(
 			node,
 			crawler.config.PrivateKey,
-			handshakeLastTry,
+			handshakeLastErrors,
 			crawler.config.HandshakeRefreshTimeout,
+			crawler.config.HandshakeRetryDelay,
+			crawler.config.HandshakeMaxTries,
+			crawler.handshakeTransientError,
 			logger)
 
 		keygenCachedHexKeys, err := crawler.db.FindNeighborBucketKeys(ctx, id)
@@ -263,6 +274,7 @@ func (crawler *Crawler) Run(ctx context.Context) error {
 			crawler.transport,
 			crawler.forkFilter,
 			diplomat,
+			handshakeNextRetryTime,
 			crawler.config.KeygenTimeout,
 			crawler.config.KeygenConcurrency,
 			keygenSem,
@@ -290,11 +302,15 @@ func (crawler *Crawler) Run(ctx context.Context) error {
 			}
 
 			var clientID *string
+			var handshakeRetryTime *time.Time
 			if result != nil {
 				clientID = result.ClientID
+				handshakeRetryTime = result.HandshakeRetryTime
 			} else if (err != nil) && (err.id == InterrogationErrorBlacklistedClientID) {
 				clientID = new(string)
 				*clientID = err.wrappedErr.Error()
+				handshakeRetryTime = new(time.Time)
+				*handshakeRetryTime = time.Now().Add(crawler.config.HandshakeRefreshTimeout)
 			}
 
 			if err != nil {
@@ -323,7 +339,7 @@ func (crawler *Crawler) Run(ctx context.Context) error {
 			}
 
 			crawler.saveQueue.EnqueueTask(ctx, func(ctx context.Context) error {
-				return crawler.saveInterrogationResult(ctx, id, result, isPingError, isCompatFork, clientID)
+				return crawler.saveInterrogationResult(ctx, id, result, isPingError, isCompatFork, clientID, handshakeRetryTime)
 			})
 		}()
 	}
@@ -337,6 +353,7 @@ func (crawler *Crawler) saveInterrogationResult(
 	isPingError bool,
 	isCompatFork *bool,
 	clientID *string,
+	handshakeRetryTime *time.Time,
 ) error {
 	var peers []*enode.Node
 	if result != nil {
@@ -364,7 +381,7 @@ func (crawler *Crawler) saveInterrogationResult(
 	}
 
 	if (result != nil) && (result.HandshakeErr != nil) {
-		dbErr := crawler.db.UpdateHandshakeError(ctx, id, result.HandshakeErr.StringCode())
+		dbErr := crawler.db.InsertHandshakeError(ctx, id, result.HandshakeErr.StringCode())
 		if dbErr != nil {
 			return dbErr
 		}
@@ -391,6 +408,18 @@ func (crawler *Crawler) saveInterrogationResult(
 
 	if clientID != nil {
 		dbErr := crawler.db.UpdateClientID(ctx, id, *clientID)
+		if dbErr != nil {
+			return dbErr
+		}
+
+		dbErr = crawler.db.DeleteHandshakeErrors(ctx, id)
+		if dbErr != nil {
+			return dbErr
+		}
+	}
+
+	if handshakeRetryTime != nil {
+		dbErr := crawler.db.UpdateHandshakeRetryTime(ctx, id, *handshakeRetryTime)
 		if dbErr != nil {
 			return dbErr
 		}

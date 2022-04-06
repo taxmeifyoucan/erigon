@@ -71,10 +71,6 @@ func (diplomacy *Diplomacy) selectCandidates(ctx context.Context, candidatesChan
 	for ctx.Err() == nil {
 		candidates, err := diplomacy.db.TakeHandshakeCandidates(
 			ctx,
-			diplomacy.refreshTimeout,
-			diplomacy.retryDelay,
-			diplomacy.maxHandshakeTries,
-			diplomacy.transientError.StringCode(),
 			diplomacy.concurrencyLimit)
 		if err != nil {
 			if diplomacy.db.IsConflictError(err) {
@@ -142,21 +138,24 @@ func (diplomacy *Diplomacy) Run(ctx context.Context) error {
 		nodeDesc := node.URLv4()
 		logger := diplomacy.log.New("node", nodeDesc)
 
-		handshakeLastTry, err := diplomacy.db.FindHandshakeLastTry(ctx, id)
+		handshakeLastErrors, err := diplomacy.db.FindHandshakeLastErrors(ctx, id, diplomacy.maxHandshakeTries)
 		if err != nil {
 			if diplomacy.db.IsConflictError(err) {
-				diplomacy.log.Warn("Failed to get handshake last try", "err", err)
+				diplomacy.log.Warn("Failed to get handshake last errors", "err", err)
 				sem.Release(1)
 				continue
 			}
-			return fmt.Errorf("failed to get handshake last try: %w", err)
+			return fmt.Errorf("failed to get handshake last errors: %w", err)
 		}
 
 		diplomat := NewDiplomat(
 			node,
 			diplomacy.privateKey,
-			handshakeLastTry,
+			handshakeLastErrors,
 			diplomacy.refreshTimeout,
+			diplomacy.retryDelay,
+			diplomacy.maxHandshakeTries,
+			diplomacy.transientError,
 			logger)
 
 		go func(id database.NodeID) {
@@ -174,8 +173,10 @@ func (diplomacy *Diplomacy) Run(ctx context.Context) error {
 				*isCompatFork = false
 			}
 
+			nextRetryTime := diplomat.NextRetryTime(handshakeErr)
+
 			diplomacy.saveQueue.EnqueueTask(ctx, func(ctx context.Context) error {
-				return diplomacy.saveDiplomatResult(ctx, id, clientID, handshakeErr, isCompatFork)
+				return diplomacy.saveDiplomatResult(ctx, id, clientID, handshakeErr, isCompatFork, nextRetryTime)
 			})
 		}(id)
 	}
@@ -188,16 +189,22 @@ func (diplomacy *Diplomacy) saveDiplomatResult(
 	clientID *string,
 	handshakeErr *HandshakeError,
 	isCompatFork *bool,
+	nextRetryTime time.Time,
 ) error {
 	if clientID != nil {
 		dbErr := diplomacy.db.UpdateClientID(ctx, id, *clientID)
 		if dbErr != nil {
 			return dbErr
 		}
+
+		dbErr = diplomacy.db.DeleteHandshakeErrors(ctx, id)
+		if dbErr != nil {
+			return dbErr
+		}
 	}
 
 	if handshakeErr != nil {
-		dbErr := diplomacy.db.UpdateHandshakeError(ctx, id, handshakeErr.StringCode())
+		dbErr := diplomacy.db.InsertHandshakeError(ctx, id, handshakeErr.StringCode())
 		if dbErr != nil {
 			return dbErr
 		}
@@ -210,5 +217,5 @@ func (diplomacy *Diplomacy) saveDiplomatResult(
 		}
 	}
 
-	return nil
+	return diplomacy.db.UpdateHandshakeRetryTime(ctx, id, nextRetryTime)
 }

@@ -11,11 +11,14 @@ import (
 )
 
 type Diplomat struct {
-	node *enode.Node
+	node       *enode.Node
+	privateKey *ecdsa.PrivateKey
 
-	privateKey              *ecdsa.PrivateKey
-	handshakeLastTry        *database.HandshakeTry
+	handshakeLastErrors     []database.HandshakeError
 	handshakeRefreshTimeout time.Duration
+	handshakeRetryDelay     time.Duration
+	handshakeMaxTries       uint
+	transientError          *HandshakeError
 
 	log log.Logger
 }
@@ -23,25 +26,27 @@ type Diplomat struct {
 func NewDiplomat(
 	node *enode.Node,
 	privateKey *ecdsa.PrivateKey,
-	handshakeLastTry *database.HandshakeTry,
+	handshakeLastErrors []database.HandshakeError,
 	handshakeRefreshTimeout time.Duration,
+	handshakeRetryDelay time.Duration,
+	handshakeMaxTries uint,
+	transientError *HandshakeError,
 	logger log.Logger,
 ) *Diplomat {
 	instance := Diplomat{
 		node,
 		privateKey,
-		handshakeLastTry,
+		handshakeLastErrors,
 		handshakeRefreshTimeout,
+		handshakeRetryDelay,
+		handshakeMaxTries,
+		transientError,
 		logger,
 	}
 	return &instance
 }
 
 func (diplomat *Diplomat) Run(ctx context.Context) (*string, *HandshakeError) {
-	if !diplomat.canRetryHandshake() {
-		return nil, nil
-	}
-
 	return diplomat.tryRequestClientID(ctx)
 }
 
@@ -64,9 +69,47 @@ func (diplomat *Diplomat) tryRequestClientID(ctx context.Context) (*string, *Han
 	return clientID, nil
 }
 
-func (diplomat *Diplomat) canRetryHandshake() bool {
-	if (diplomat.handshakeLastTry != nil) && !diplomat.handshakeLastTry.HasFailed {
-		return time.Since(diplomat.handshakeLastTry.Time) > diplomat.handshakeRefreshTimeout
+func (diplomat *Diplomat) NextRetryTime(handshakeErr *HandshakeError) time.Time {
+	return time.Now().Add(diplomat.NextRetryDelay(handshakeErr))
+}
+
+func (diplomat *Diplomat) NextRetryDelay(handshakeErr *HandshakeError) time.Duration {
+	if handshakeErr == nil {
+		return diplomat.handshakeRefreshTimeout
 	}
-	return true
+
+	dbHandshakeErr := database.HandshakeError{
+		StringCode: handshakeErr.StringCode(),
+		Time:       time.Now(),
+	}
+
+	lastErrors := append([]database.HandshakeError{dbHandshakeErr}, diplomat.handshakeLastErrors...)
+
+	if uint(len(lastErrors)) < diplomat.handshakeMaxTries {
+		return diplomat.handshakeRetryDelay
+	}
+
+	if containsHandshakeError(diplomat.transientError, lastErrors) {
+		return diplomat.handshakeRetryDelay
+	}
+
+	if len(lastErrors) < 2 {
+		return 1000000 * time.Hour // never
+	}
+
+	backOffDelay := 2 * lastErrors[0].Time.Sub(lastErrors[1].Time)
+	if backOffDelay < diplomat.handshakeRetryDelay {
+		return diplomat.handshakeRetryDelay
+	}
+
+	return backOffDelay
+}
+
+func containsHandshakeError(target *HandshakeError, list []database.HandshakeError) bool {
+	for _, err := range list {
+		if err.StringCode == target.StringCode() {
+			return true
+		}
+	}
+	return false
 }

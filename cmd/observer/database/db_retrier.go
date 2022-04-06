@@ -43,6 +43,18 @@ func (db DBRetrier) UpsertNodeAddr(ctx context.Context, id NodeID, addr NodeAddr
 	return err
 }
 
+func (db DBRetrier) FindNodeAddr(ctx context.Context, id NodeID) (*NodeAddr, error) {
+	resultAny, err := db.retry(ctx, "FindNodeAddr", func(ctx context.Context) (interface{}, error) {
+		return db.db.FindNodeAddr(ctx, id)
+	})
+
+	if resultAny == nil {
+		return nil, err
+	}
+	result := resultAny.(*NodeAddr)
+	return result, err
+}
+
 func (db DBRetrier) ResetPingError(ctx context.Context, id NodeID) error {
 	_, err := db.retry(ctx, "ResetPingError", func(ctx context.Context) (interface{}, error) {
 		return nil, db.db.ResetPingError(ctx, id)
@@ -64,16 +76,54 @@ func (db DBRetrier) UpdateClientID(ctx context.Context, id NodeID, clientID stri
 	return err
 }
 
-func (db DBRetrier) UpdateHandshakeError(ctx context.Context, id NodeID, handshakeErr string) error {
-	_, err := db.retry(ctx, "UpdateHandshakeError", func(ctx context.Context) (interface{}, error) {
-		return nil, db.db.UpdateHandshakeError(ctx, id, handshakeErr)
+func (db DBRetrier) InsertHandshakeError(ctx context.Context, id NodeID, handshakeErr string) error {
+	_, err := db.retry(ctx, "InsertHandshakeError", func(ctx context.Context) (interface{}, error) {
+		return nil, db.db.InsertHandshakeError(ctx, id, handshakeErr)
 	})
 	return err
 }
 
-func (db DBRetrier) TakeHandshakeCandidates(ctx context.Context, minUnusedOKDuration time.Duration, minUnusedErrDuration time.Duration, maxHandshakeTries uint, transientErr string, limit uint) ([]NodeID, error) {
+func (db DBRetrier) DeleteHandshakeErrors(ctx context.Context, id NodeID) error {
+	_, err := db.retry(ctx, "DeleteHandshakeErrors", func(ctx context.Context) (interface{}, error) {
+		return nil, db.db.DeleteHandshakeErrors(ctx, id)
+	})
+	return err
+}
+
+func (db DBRetrier) FindHandshakeLastErrors(ctx context.Context, id NodeID, limit uint) ([]HandshakeError, error) {
+	resultAny, err := db.retry(ctx, "FindHandshakeLastErrors", func(ctx context.Context) (interface{}, error) {
+		return db.db.FindHandshakeLastErrors(ctx, id, limit)
+	})
+
+	if resultAny == nil {
+		return nil, err
+	}
+	result := resultAny.([]HandshakeError)
+	return result, err
+}
+
+func (db DBRetrier) UpdateHandshakeRetryTime(ctx context.Context, id NodeID, retryTime time.Time) error {
+	_, err := db.retry(ctx, "UpdateHandshakeRetryTime", func(ctx context.Context) (interface{}, error) {
+		return nil, db.db.UpdateHandshakeRetryTime(ctx, id, retryTime)
+	})
+	return err
+}
+
+func (db DBRetrier) FindHandshakeRetryTime(ctx context.Context, id NodeID) (*time.Time, error) {
+	resultAny, err := db.retry(ctx, "FindHandshakeRetryTime", func(ctx context.Context) (interface{}, error) {
+		return db.db.FindHandshakeRetryTime(ctx, id)
+	})
+
+	if resultAny == nil {
+		return nil, err
+	}
+	result := resultAny.(*time.Time)
+	return result, err
+}
+
+func (db DBRetrier) TakeHandshakeCandidates(ctx context.Context, limit uint) ([]NodeID, error) {
 	resultAny, err := db.retry(ctx, "TakeHandshakeCandidates", func(ctx context.Context) (interface{}, error) {
-		return db.db.TakeHandshakeCandidates(ctx, minUnusedOKDuration, minUnusedErrDuration, maxHandshakeTries, transientErr, limit)
+		return db.db.TakeHandshakeCandidates(ctx, limit)
 	})
 
 	if resultAny == nil {
@@ -97,42 +147,6 @@ func (db DBRetrier) UpdateNeighborBucketKeys(ctx context.Context, id NodeID, key
 	return err
 }
 
-func (db DBRetrier) TakeCandidates(ctx context.Context, minUnusedDuration time.Duration, maxPingTries uint, maxHandshakeTries uint, transientHandshakeErr string, limit uint) ([]NodeID, error) {
-	resultAny, err := db.retry(ctx, "TakeCandidates", func(ctx context.Context) (interface{}, error) {
-		return db.db.TakeCandidates(ctx, minUnusedDuration, maxPingTries, maxHandshakeTries, transientHandshakeErr, limit)
-	})
-
-	if resultAny == nil {
-		return nil, err
-	}
-	result := resultAny.([]NodeID)
-	return result, err
-}
-
-func (db DBRetrier) FindNodeAddr(ctx context.Context, id NodeID) (*NodeAddr, error) {
-	resultAny, err := db.retry(ctx, "FindNodeAddr", func(ctx context.Context) (interface{}, error) {
-		return db.db.FindNodeAddr(ctx, id)
-	})
-
-	if resultAny == nil {
-		return nil, err
-	}
-	result := resultAny.(*NodeAddr)
-	return result, err
-}
-
-func (db DBRetrier) FindHandshakeLastTry(ctx context.Context, id NodeID) (*HandshakeTry, error) {
-	resultAny, err := db.retry(ctx, "FindHandshakeLastTry", func(ctx context.Context) (interface{}, error) {
-		return db.db.FindHandshakeLastTry(ctx, id)
-	})
-
-	if resultAny == nil {
-		return nil, err
-	}
-	result := resultAny.(*HandshakeTry)
-	return result, err
-}
-
 func (db DBRetrier) FindNeighborBucketKeys(ctx context.Context, id NodeID) ([]string, error) {
 	resultAny, err := db.retry(ctx, "FindNeighborBucketKeys", func(ctx context.Context) (interface{}, error) {
 		return db.db.FindNeighborBucketKeys(ctx, id)
@@ -142,6 +156,18 @@ func (db DBRetrier) FindNeighborBucketKeys(ctx context.Context, id NodeID) ([]st
 		return nil, err
 	}
 	result := resultAny.([]string)
+	return result, err
+}
+
+func (db DBRetrier) TakeCandidates(ctx context.Context, minUnusedDuration time.Duration, maxPingTries uint, limit uint) ([]NodeID, error) {
+	resultAny, err := db.retry(ctx, "TakeCandidates", func(ctx context.Context) (interface{}, error) {
+		return db.db.TakeCandidates(ctx, minUnusedDuration, maxPingTries, limit)
+	})
+
+	if resultAny == nil {
+		return nil, err
+	}
+	result := resultAny.([]NodeID)
 	return result, err
 }
 

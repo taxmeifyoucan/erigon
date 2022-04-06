@@ -24,7 +24,9 @@ type Interrogator struct {
 	node       *enode.Node
 	transport  DiscV4Transport
 	forkFilter forkid.Filter
-	diplomat   *Diplomat
+
+	diplomat           *Diplomat
+	handshakeRetryTime *time.Time
 
 	keygenTimeout     time.Duration
 	keygenConcurrency uint
@@ -35,12 +37,13 @@ type Interrogator struct {
 }
 
 type InterrogationResult struct {
-	Node         *enode.Node
-	IsCompatFork *bool
-	ClientID     *string
-	HandshakeErr *HandshakeError
-	KeygenKeys   []*ecdsa.PublicKey
-	Peers        []*enode.Node
+	Node               *enode.Node
+	IsCompatFork       *bool
+	ClientID           *string
+	HandshakeErr       *HandshakeError
+	HandshakeRetryTime *time.Time
+	KeygenKeys         []*ecdsa.PublicKey
+	Peers              []*enode.Node
 }
 
 func NewInterrogator(
@@ -48,6 +51,7 @@ func NewInterrogator(
 	transport DiscV4Transport,
 	forkFilter forkid.Filter,
 	diplomat *Diplomat,
+	handshakeRetryTime *time.Time,
 	keygenTimeout time.Duration,
 	keygenConcurrency uint,
 	keygenSemaphore *semaphore.Weighted,
@@ -59,6 +63,7 @@ func NewInterrogator(
 		transport,
 		forkFilter,
 		diplomat,
+		handshakeRetryTime,
 		keygenTimeout,
 		keygenConcurrency,
 		keygenSemaphore,
@@ -101,9 +106,16 @@ func (interrogator *Interrogator) Run(ctx context.Context) (*InterrogationResult
 	}
 
 	// request client ID
-	clientID, handshakeErr := interrogator.diplomat.Run(ctx)
-	if (clientID != nil) && IsClientIDBlacklisted(*clientID) {
-		return nil, NewInterrogationError(InterrogationErrorBlacklistedClientID, errors.New(*clientID))
+	var clientID *string
+	var handshakeErr *HandshakeError
+	var handshakeRetryTime *time.Time
+	if (interrogator.handshakeRetryTime == nil) || interrogator.handshakeRetryTime.Before(time.Now()) {
+		clientID, handshakeErr = interrogator.diplomat.Run(ctx)
+		if (clientID != nil) && IsClientIDBlacklisted(*clientID) {
+			return nil, NewInterrogationError(InterrogationErrorBlacklistedClientID, errors.New(*clientID))
+		}
+		handshakeRetryTime = new(time.Time)
+		*handshakeRetryTime = interrogator.diplomat.NextRetryTime(handshakeErr)
 	}
 
 	// keygen
@@ -140,6 +152,7 @@ func (interrogator *Interrogator) Run(ctx context.Context) (*InterrogationResult
 		isCompatFork,
 		clientID,
 		handshakeErr,
+		handshakeRetryTime,
 		keys,
 		peers,
 	}
