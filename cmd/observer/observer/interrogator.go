@@ -11,6 +11,7 @@ import (
 	"github.com/ledgerwatch/erigon/p2p/enode"
 	"github.com/ledgerwatch/log/v3"
 	"golang.org/x/sync/semaphore"
+	"strings"
 	"time"
 )
 
@@ -81,12 +82,34 @@ func (interrogator *Interrogator) Run(ctx context.Context) (*InterrogationResult
 		return nil, NewInterrogationError(InterrogationErrorPing, err)
 	}
 
+	// The outgoing Ping above triggers an incoming Ping.
+	// We need to wait until Server sends a Pong reply to that.
+	// The remote side is waiting for this Pong no longer than v4_udp.respTimeout.
+	// If we don't wait, the ENRRequest/FindNode might fail due to errUnknownNode.
+	utils.Sleep(ctx, 500*time.Millisecond)
+
+	// request client ID
+	var clientID *string
+	var handshakeErr *HandshakeError
+	var handshakeRetryTime *time.Time
+	if (interrogator.handshakeRetryTime == nil) || interrogator.handshakeRetryTime.Before(time.Now()) {
+		clientID, handshakeErr = interrogator.diplomat.Run(ctx)
+		if (clientID != nil) && IsClientIDBlacklisted(*clientID) {
+			return nil, NewInterrogationError(InterrogationErrorBlacklistedClientID, errors.New(*clientID))
+		}
+		handshakeRetryTime = new(time.Time)
+		*handshakeRetryTime = interrogator.diplomat.NextRetryTime(handshakeErr)
+	}
+
 	// request ENR
 	var forkID *forkid.ID
-	enr, err := interrogator.transport.RequestENR(interrogator.node)
+	var enr *enode.Node
+	if (clientID == nil) || isENRRequestSupportedByClientID(*clientID) {
+		enr, err = interrogator.transport.RequestENR(interrogator.node)
+	}
 	if err != nil {
 		interrogator.log.Debug("ENR request failed", "err", err)
-	} else {
+	} else if enr != nil {
 		interrogator.log.Debug("Got ENR", "enr", enr)
 		forkID, err = eth.LoadENRForkID(enr.Record())
 		if err != nil {
@@ -103,19 +126,6 @@ func (interrogator *Interrogator) Run(ctx context.Context) (*InterrogationResult
 		if !*isCompatFork {
 			return nil, NewInterrogationError(InterrogationErrorIncompatibleForkID, err)
 		}
-	}
-
-	// request client ID
-	var clientID *string
-	var handshakeErr *HandshakeError
-	var handshakeRetryTime *time.Time
-	if (interrogator.handshakeRetryTime == nil) || interrogator.handshakeRetryTime.Before(time.Now()) {
-		clientID, handshakeErr = interrogator.diplomat.Run(ctx)
-		if (clientID != nil) && IsClientIDBlacklisted(*clientID) {
-			return nil, NewInterrogationError(InterrogationErrorBlacklistedClientID, errors.New(*clientID))
-		}
-		handshakeRetryTime = new(time.Time)
-		*handshakeRetryTime = interrogator.diplomat.NextRetryTime(handshakeErr)
 	}
 
 	// keygen
@@ -200,6 +210,13 @@ func (interrogator *Interrogator) findNode(ctx context.Context, targetKey *ecdsa
 
 func isFindNodeTimeoutError(err error) bool {
 	return (err != nil) && (err.Error() == "RPC timeout")
+}
+
+func isENRRequestSupportedByClientID(clientID string) bool {
+	isUnsupported := strings.HasPrefix(clientID, "Parity-Ethereum") ||
+		strings.HasPrefix(clientID, "OpenEthereum") ||
+		strings.HasPrefix(clientID, "Nethermind")
+	return !isUnsupported
 }
 
 func valuesOfIDToNodeMap(m map[enode.ID]*enode.Node) []*enode.Node {
