@@ -5,6 +5,7 @@ import (
 	"crypto/ecdsa"
 	"errors"
 	"github.com/ledgerwatch/erigon/cmd/observer/database"
+	"github.com/ledgerwatch/erigon/p2p"
 	"github.com/ledgerwatch/erigon/p2p/enode"
 	"github.com/ledgerwatch/log/v3"
 	"time"
@@ -18,7 +19,6 @@ type Diplomat struct {
 	handshakeRefreshTimeout time.Duration
 	handshakeRetryDelay     time.Duration
 	handshakeMaxTries       uint
-	transientError          *HandshakeError
 
 	log log.Logger
 }
@@ -30,7 +30,6 @@ func NewDiplomat(
 	handshakeRefreshTimeout time.Duration,
 	handshakeRetryDelay time.Duration,
 	handshakeMaxTries uint,
-	transientError *HandshakeError,
 	logger log.Logger,
 ) *Diplomat {
 	instance := Diplomat{
@@ -40,7 +39,6 @@ func NewDiplomat(
 		handshakeRefreshTimeout,
 		handshakeRetryDelay,
 		handshakeMaxTries,
-		transientError,
 		logger,
 	}
 	return &instance
@@ -89,7 +87,7 @@ func (diplomat *Diplomat) NextRetryDelay(handshakeErr *HandshakeError) time.Dura
 		return diplomat.handshakeRetryDelay
 	}
 
-	if containsHandshakeError(diplomat.transientError, lastErrors) {
+	if containsHandshakeError(diplomat.transientError(), lastErrors) {
 		return diplomat.handshakeRetryDelay
 	}
 
@@ -103,6 +101,10 @@ func (diplomat *Diplomat) NextRetryDelay(handshakeErr *HandshakeError) time.Dura
 	}
 
 	return backOffDelay
+}
+
+func (diplomat *Diplomat) transientError() *HandshakeError {
+	return NewHandshakeError(HandshakeErrorIDDisconnect, p2p.DiscTooManyPeers, uint64(p2p.DiscTooManyPeers))
 }
 
 func containsHandshakeError(target *HandshakeError, list []database.HandshakeError) bool {
