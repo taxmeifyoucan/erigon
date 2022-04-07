@@ -69,6 +69,18 @@ func (db DBRetrier) UpdatePingError(ctx context.Context, id NodeID) error {
 	return err
 }
 
+func (db DBRetrier) CountPingErrors(ctx context.Context, id NodeID) (*uint, error) {
+	resultAny, err := db.retry(ctx, "CountPingErrors", func(ctx context.Context) (interface{}, error) {
+		return db.db.CountPingErrors(ctx, id)
+	})
+
+	if resultAny == nil {
+		return nil, err
+	}
+	result := resultAny.(*uint)
+	return result, err
+}
+
 func (db DBRetrier) UpdateClientID(ctx context.Context, id NodeID, clientID string) error {
 	_, err := db.retry(ctx, "UpdateClientID", func(ctx context.Context) (interface{}, error) {
 		return nil, db.db.UpdateClientID(ctx, id, clientID)
@@ -159,9 +171,16 @@ func (db DBRetrier) FindNeighborBucketKeys(ctx context.Context, id NodeID) ([]st
 	return result, err
 }
 
-func (db DBRetrier) TakeCandidates(ctx context.Context, minUnusedDuration time.Duration, maxPingTries uint, limit uint) ([]NodeID, error) {
+func (db DBRetrier) UpdateCrawlRetryTime(ctx context.Context, id NodeID, retryTime time.Time) error {
+	_, err := db.retry(ctx, "UpdateCrawlRetryTime", func(ctx context.Context) (interface{}, error) {
+		return nil, db.db.UpdateCrawlRetryTime(ctx, id, retryTime)
+	})
+	return err
+}
+
+func (db DBRetrier) TakeCandidates(ctx context.Context, limit uint) ([]NodeID, error) {
 	resultAny, err := db.retry(ctx, "TakeCandidates", func(ctx context.Context) (interface{}, error) {
-		return db.db.TakeCandidates(ctx, minUnusedDuration, maxPingTries, limit)
+		return db.db.TakeCandidates(ctx, limit)
 	})
 
 	if resultAny == nil {

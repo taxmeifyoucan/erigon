@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS nodes (
     
     neighbor_keys TEXT,
     
-    taken_last INTEGER
+    crawl_retry_time INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS handshake_errors (
@@ -51,7 +51,7 @@ CREATE TABLE IF NOT EXISTS handshake_errors (
     updated INTEGER NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_nodes_taken_last ON nodes (taken_last);
+CREATE INDEX IF NOT EXISTS idx_nodes_crawl_retry_time ON nodes (crawl_retry_time);
 CREATE INDEX IF NOT EXISTS idx_nodes_ip ON nodes (ip);
 CREATE INDEX IF NOT EXISTS idx_nodes_ip_v6 ON nodes (ip_v6);
 CREATE INDEX IF NOT EXISTS idx_nodes_compat_fork ON nodes (compat_fork);
@@ -98,6 +98,10 @@ UPDATE nodes SET ping_try = 0 WHERE id = ?
 
 	sqlUpdatePingError = `
 UPDATE nodes SET ping_try = nodes.ping_try + 1 WHERE id = ?
+`
+
+	sqlCountPingErrors = `
+SELECT ping_try FROM nodes WHERE id = ?
 `
 
 	sqlUpdateClientID = `
@@ -158,17 +162,20 @@ UPDATE nodes SET neighbor_keys = ? WHERE id = ?
 SELECT neighbor_keys FROM nodes WHERE id = ?
 `
 
+	sqlUpdateCrawlRetryTime = `
+UPDATE nodes SET crawl_retry_time = ? WHERE id = ?
+`
+
 	sqlFindCandidates = `
 SELECT id FROM nodes
-WHERE ((taken_last IS NULL) OR (taken_last < ?))
+WHERE ((crawl_retry_time IS NULL) OR (crawl_retry_time < ?))
 	AND ((compat_fork == TRUE) OR (compat_fork IS NULL))
-    AND (ping_try <= ?)
-ORDER BY taken_last
+ORDER BY crawl_retry_time
 LIMIT ?
 `
 
 	sqlMarkTakenNodes = `
-UPDATE nodes SET taken_last = ? WHERE id IN (123)
+UPDATE nodes SET crawl_retry_time = ? WHERE id IN (123)
 `
 
 	sqlCountNodes = `
@@ -328,6 +335,18 @@ func (db *DBSQLite) UpdatePingError(ctx context.Context, id NodeID) error {
 		return fmt.Errorf("UpdatePingError failed: %w", err)
 	}
 	return nil
+}
+
+func (db *DBSQLite) CountPingErrors(ctx context.Context, id NodeID) (*uint, error) {
+	row := db.db.QueryRowContext(ctx, sqlCountPingErrors, id)
+	var count uint
+	if err := row.Scan(&count); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("CountPingErrors failed: %w", err)
+	}
+	return &count, nil
 }
 
 func (db *DBSQLite) UpdateClientID(ctx context.Context, id NodeID, clientID string) error {
@@ -542,18 +561,23 @@ func (db *DBSQLite) FindNeighborBucketKeys(ctx context.Context, id NodeID) ([]st
 	return strings.Split(keysStr.String, ","), nil
 }
 
+func (db *DBSQLite) UpdateCrawlRetryTime(ctx context.Context, id NodeID, retryTime time.Time) error {
+	_, err := db.db.ExecContext(ctx, sqlUpdateCrawlRetryTime, retryTime.Unix(), id)
+	if err != nil {
+		return fmt.Errorf("UpdateCrawlRetryTime failed: %w", err)
+	}
+	return nil
+}
+
 func (db *DBSQLite) FindCandidates(
 	ctx context.Context,
-	minUnusedDuration time.Duration,
-	maxPingTries uint,
 	limit uint,
 ) ([]NodeID, error) {
-	takenLastBefore := time.Now().Add(-minUnusedDuration).Unix()
+	retryTimeBefore := time.Now().Unix()
 	cursor, err := db.db.QueryContext(
 		ctx,
 		sqlFindCandidates,
-		takenLastBefore,
-		maxPingTries,
+		retryTimeBefore,
 		limit)
 	if err != nil {
 		return nil, fmt.Errorf("FindCandidates failed to query candidates: %w", err)
@@ -584,11 +608,11 @@ func (db *DBSQLite) MarkTakenNodes(ctx context.Context, ids []NodeID) error {
 		return nil
 	}
 
-	takenLast := time.Now().Unix()
+	delayedRetryTime := time.Now().Add(time.Hour).Unix()
 
 	idsPlaceholders := strings.TrimRight(strings.Repeat("?,", len(ids)), ",")
 	query := strings.Replace(sqlMarkTakenNodes, "123", idsPlaceholders, 1)
-	args := append([]interface{}{takenLast}, stringsToAny(ids)...)
+	args := append([]interface{}{delayedRetryTime}, stringsToAny(ids)...)
 
 	_, err := db.db.ExecContext(ctx, query, args...)
 	if err != nil {
@@ -599,8 +623,6 @@ func (db *DBSQLite) MarkTakenNodes(ctx context.Context, ids []NodeID) error {
 
 func (db *DBSQLite) TakeCandidates(
 	ctx context.Context,
-	minUnusedDuration time.Duration,
-	maxPingTries uint,
 	limit uint,
 ) ([]NodeID, error) {
 	tx, err := db.db.BeginTx(ctx, nil)
@@ -610,8 +632,6 @@ func (db *DBSQLite) TakeCandidates(
 
 	ids, err := db.FindCandidates(
 		ctx,
-		minUnusedDuration,
-		maxPingTries,
 		limit)
 	if err != nil {
 		_ = tx.Rollback()

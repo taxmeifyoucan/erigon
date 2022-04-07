@@ -7,7 +7,6 @@ import (
 	"net"
 	"path/filepath"
 	"testing"
-	"time"
 )
 
 func TestDBSQLiteInsertAndFind(t *testing.T) {
@@ -24,7 +23,7 @@ func TestDBSQLiteInsertAndFind(t *testing.T) {
 	err = db.UpsertNodeAddr(ctx, id, addr)
 	require.Nil(t, err)
 
-	candidates, err := db.FindCandidates(ctx, time.Second, 10, 1)
+	candidates, err := db.FindCandidates(ctx, 1)
 	require.Nil(t, err)
 	require.Equal(t, 1, len(candidates))
 

@@ -30,6 +30,7 @@ type DB interface {
 
 	ResetPingError(ctx context.Context, id NodeID) error
 	UpdatePingError(ctx context.Context, id NodeID) error
+	CountPingErrors(ctx context.Context, id NodeID) (*uint, error)
 
 	UpdateClientID(ctx context.Context, id NodeID, clientID string) error
 	InsertHandshakeError(ctx context.Context, id NodeID, handshakeErr string) error
@@ -47,10 +48,11 @@ type DB interface {
 	UpdateNeighborBucketKeys(ctx context.Context, id NodeID, keys []string) error
 	FindNeighborBucketKeys(ctx context.Context, id NodeID) ([]string, error)
 
-	FindCandidates(ctx context.Context, minUnusedDuration time.Duration, maxPingTries uint, limit uint) ([]NodeID, error)
+	UpdateCrawlRetryTime(ctx context.Context, id NodeID, retryTime time.Time) error
+	FindCandidates(ctx context.Context, limit uint) ([]NodeID, error)
 	MarkTakenNodes(ctx context.Context, nodes []NodeID) error
 	// TakeCandidates runs FindCandidates + MarkTakenNodes in a transaction.
-	TakeCandidates(ctx context.Context, minUnusedDuration time.Duration, maxPingTries uint, limit uint) ([]NodeID, error)
+	TakeCandidates(ctx context.Context, limit uint) ([]NodeID, error)
 
 	IsConflictError(err error) bool
 

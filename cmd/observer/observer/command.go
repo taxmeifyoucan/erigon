@@ -152,7 +152,7 @@ func (command *Command) withRefreshTimeout() {
 func (command *Command) withMaxPingTries() {
 	flag := cli.UintFlag{
 		Name:  "max-ping-tries",
-		Usage: "How many times to retry PING before abandoning a candidate",
+		Usage: "How many times to try PING before applying exponential back-off logic",
 		Value: 3,
 	}
 	command.command.Flags().UintVar(&command.flags.MaxPingTries, flag.Name, flag.Value, flag.Usage)

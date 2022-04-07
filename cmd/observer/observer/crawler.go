@@ -140,8 +140,6 @@ func (crawler *Crawler) selectCandidates(ctx context.Context, nodes chan<- candi
 	for ctx.Err() == nil {
 		candidates, err := crawler.db.TakeCandidates(
 			ctx,
-			crawler.config.RefreshTimeout,
-			crawler.config.MaxPingTries,
 			crawler.config.ConcurrencyLimit)
 		if err != nil {
 			if crawler.db.IsConflictError(err) {
@@ -219,6 +217,16 @@ func (crawler *Crawler) Run(ctx context.Context) error {
 		nodeDesc := node.URLv4()
 		logger := crawler.log.New("node", nodeDesc)
 
+		prevPingTries, err := crawler.db.CountPingErrors(ctx, id)
+		if err != nil {
+			if crawler.db.IsConflictError(err) {
+				crawler.log.Warn("Failed to count ping errors", "err", err)
+				sem.Release(1)
+				continue
+			}
+			return fmt.Errorf("failed to count ping errors: %w", err)
+		}
+
 		handshakeNextRetryTime, err := crawler.db.FindHandshakeRetryTime(ctx, id)
 		if err != nil {
 			if crawler.db.IsConflictError(err) {
@@ -283,6 +291,7 @@ func (crawler *Crawler) Run(ctx context.Context) error {
 			result, err := interrogator.Run(ctx)
 
 			isPingError := (err != nil) && (err.id == InterrogationErrorPing)
+			nextRetryTime := crawler.nextRetryTime(isPingError, *prevPingTries)
 
 			var isCompatFork *bool
 			if result != nil {
@@ -332,7 +341,15 @@ func (crawler *Crawler) Run(ctx context.Context) error {
 			}
 
 			crawler.saveQueue.EnqueueTask(ctx, func(ctx context.Context) error {
-				return crawler.saveInterrogationResult(ctx, id, result, isPingError, isCompatFork, clientID, handshakeRetryTime)
+				return crawler.saveInterrogationResult(
+					ctx,
+					id,
+					result,
+					isPingError,
+					isCompatFork,
+					clientID,
+					handshakeRetryTime,
+					nextRetryTime)
 			})
 		}()
 	}
@@ -347,6 +364,7 @@ func (crawler *Crawler) saveInterrogationResult(
 	isCompatFork *bool,
 	clientID *string,
 	handshakeRetryTime *time.Time,
+	nextRetryTime time.Time,
 ) error {
 	var peers []*enode.Node
 	if result != nil {
@@ -418,5 +436,23 @@ func (crawler *Crawler) saveInterrogationResult(
 		}
 	}
 
-	return nil
+	return crawler.db.UpdateCrawlRetryTime(ctx, id, nextRetryTime)
+}
+
+func (crawler *Crawler) nextRetryTime(isPingError bool, prevPingTries uint) time.Time {
+	return time.Now().Add(crawler.nextRetryDelay(isPingError, prevPingTries))
+}
+
+func (crawler *Crawler) nextRetryDelay(isPingError bool, prevPingTries uint) time.Duration {
+	if !isPingError {
+		return crawler.config.RefreshTimeout
+	}
+
+	pingTries := prevPingTries + 1
+	if pingTries < crawler.config.MaxPingTries {
+		return crawler.config.RefreshTimeout
+	}
+
+	// back off: double for each next retry
+	return crawler.config.RefreshTimeout << (pingTries - crawler.config.MaxPingTries + 1)
 }
