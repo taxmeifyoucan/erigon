@@ -115,6 +115,9 @@ func (interrogator *Interrogator) Run(ctx context.Context) (*InterrogationResult
 		if err != nil {
 			return nil, NewInterrogationError(InterrogationErrorENRDecode, err)
 		}
+		if forkID == nil {
+			interrogator.log.Debug("Got ENR, but it doesn't contain a ForkID")
+		}
 	}
 
 	// filter by fork ID
