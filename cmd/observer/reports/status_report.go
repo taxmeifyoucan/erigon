@@ -9,29 +9,22 @@ import (
 
 type StatusReport struct {
 	TotalCount      uint
-	CompatibleCount uint
 	DistinctIPCount uint
 }
 
-func CreateStatusReport(ctx context.Context, db database.DB) (*StatusReport, error) {
-	totalCount, err := db.CountNodes(ctx)
+func CreateStatusReport(ctx context.Context, db database.DB, maxPingTries uint) (*StatusReport, error) {
+	totalCount, err := db.CountNodes(ctx, maxPingTries)
 	if err != nil {
 		return nil, err
 	}
 
-	compatibleCount, err := db.CountCompatibleNodes(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	distinctIPCount, err := db.CountIPs(ctx)
+	distinctIPCount, err := db.CountIPs(ctx, maxPingTries)
 	if err != nil {
 		return nil, err
 	}
 
 	report := StatusReport{
 		totalCount,
-		compatibleCount,
 		distinctIPCount,
 	}
 	return &report, nil
@@ -40,8 +33,6 @@ func CreateStatusReport(ctx context.Context, db database.DB) (*StatusReport, err
 func (report *StatusReport) String() string {
 	var builder strings.Builder
 	builder.WriteString(fmt.Sprintf("total: %d", report.TotalCount))
-	builder.WriteRune('\n')
-	builder.WriteString(fmt.Sprintf("compatible: %d", report.CompatibleCount))
 	builder.WriteRune('\n')
 	builder.WriteString(fmt.Sprintf("distinct IPs: %d", report.DistinctIPCount))
 	builder.WriteRune('\n')

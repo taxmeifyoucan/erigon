@@ -10,13 +10,14 @@ import (
 )
 
 func StatusLoggerLoop(ctx context.Context, db database.DB, period time.Duration, logger log.Logger) {
+	var maxPingTries uint = 1000000 // unlimited (include dead nodes)
 	var prevTotalCount uint
 	var prevDistinctIPCount uint
 
 	for ctx.Err() == nil {
 		utils.Sleep(ctx, period)
 
-		totalCount, err := db.CountNodes(ctx)
+		totalCount, err := db.CountNodes(ctx, maxPingTries)
 		if err != nil {
 			if !errors.Is(err, context.Canceled) {
 				logger.Error("Failed to count nodes", "err", err)
@@ -24,7 +25,7 @@ func StatusLoggerLoop(ctx context.Context, db database.DB, period time.Duration,
 			continue
 		}
 
-		distinctIPCount, err := db.CountIPs(ctx)
+		distinctIPCount, err := db.CountIPs(ctx, maxPingTries)
 		if err != nil {
 			if !errors.Is(err, context.Canceled) {
 				logger.Error("Failed to count IPs", "err", err)

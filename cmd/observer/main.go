@@ -62,11 +62,11 @@ func reportWithFlags(ctx context.Context, flags reports.CommandFlags) error {
 		return err
 	}
 
-	statusReport, err := reports.CreateStatusReport(ctx, db)
+	statusReport, err := reports.CreateStatusReport(ctx, db, flags.MaxPingTries)
 	if err != nil {
 		return err
 	}
-	clientsReport, err := reports.CreateClientsReport(ctx, db, flags.ClientsLimit)
+	clientsReport, err := reports.CreateClientsReport(ctx, db, flags.ClientsLimit, flags.MaxPingTries)
 	if err != nil {
 		return err
 	}

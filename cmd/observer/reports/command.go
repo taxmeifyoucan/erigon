@@ -10,6 +10,7 @@ import (
 type CommandFlags struct {
 	DataDir      string
 	ClientsLimit uint
+	MaxPingTries uint
 }
 
 type Command struct {
@@ -28,6 +29,7 @@ func NewCommand() *Command {
 	}
 	instance.withDatadir()
 	instance.withClientsLimit()
+	instance.withMaxPingTries()
 
 	return &instance
 }
@@ -45,6 +47,15 @@ func (command *Command) withClientsLimit() {
 		Value: uint(10),
 	}
 	command.command.Flags().UintVar(&command.flags.ClientsLimit, flag.Name, flag.Value, flag.Usage)
+}
+
+func (command *Command) withMaxPingTries() {
+	flag := cli.UintFlag{
+		Name:  "max-ping-tries",
+		Usage: "A number of PING failures for a node to be considered dead",
+		Value: 3,
+	}
+	command.command.Flags().UintVar(&command.flags.MaxPingTries, flag.Name, flag.Value, flag.Usage)
 }
 
 func (command *Command) RawCommand() *cobra.Command {

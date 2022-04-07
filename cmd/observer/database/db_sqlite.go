@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS handshake_errors (
 CREATE INDEX IF NOT EXISTS idx_nodes_crawl_retry_time ON nodes (crawl_retry_time);
 CREATE INDEX IF NOT EXISTS idx_nodes_ip ON nodes (ip);
 CREATE INDEX IF NOT EXISTS idx_nodes_ip_v6 ON nodes (ip_v6);
+CREATE INDEX IF NOT EXISTS idx_nodes_ping_try ON nodes (ping_try);
 CREATE INDEX IF NOT EXISTS idx_nodes_compat_fork ON nodes (compat_fork);
 CREATE INDEX IF NOT EXISTS idx_nodes_handshake_retry_time ON nodes (handshake_retry_time);
 CREATE INDEX IF NOT EXISTS idx_handshake_errors_id ON handshake_errors (id);
@@ -180,19 +181,20 @@ UPDATE nodes SET crawl_retry_time = ? WHERE id IN (123)
 
 	sqlCountNodes = `
 SELECT COUNT(id) FROM nodes
-`
-
-	sqlCountCompatibleNodes = `
-SELECT COUNT(id) FROM nodes
-WHERE (compat_fork == TRUE) OR (compat_fork IS NULL)
+WHERE (ping_try < ?)
+    AND ((compat_fork == TRUE) OR (compat_fork IS NULL))
 `
 
 	sqlCountIPs = `
 SELECT COUNT(DISTINCT ip) FROM nodes
+WHERE (ping_try < ?)
+    AND ((compat_fork == TRUE) OR (compat_fork IS NULL))
 `
 
 	sqlEnumerateClientIDs = `
 SELECT client_id FROM nodes
+WHERE (ping_try < ?)
+    AND ((compat_fork == TRUE) OR (compat_fork IS NULL))
 `
 )
 
@@ -658,8 +660,8 @@ func (db *DBSQLite) IsConflictError(err error) bool {
 	return strings.Contains(err.Error(), "SQLITE_BUSY")
 }
 
-func (db *DBSQLite) CountNodes(ctx context.Context) (uint, error) {
-	row := db.db.QueryRowContext(ctx, sqlCountNodes)
+func (db *DBSQLite) CountNodes(ctx context.Context, maxPingTries uint) (uint, error) {
+	row := db.db.QueryRowContext(ctx, sqlCountNodes, maxPingTries)
 	var count uint
 	if err := row.Scan(&count); err != nil {
 		return 0, fmt.Errorf("CountNodes failed: %w", err)
@@ -667,17 +669,8 @@ func (db *DBSQLite) CountNodes(ctx context.Context) (uint, error) {
 	return count, nil
 }
 
-func (db *DBSQLite) CountCompatibleNodes(ctx context.Context) (uint, error) {
-	row := db.db.QueryRowContext(ctx, sqlCountCompatibleNodes)
-	var count uint
-	if err := row.Scan(&count); err != nil {
-		return 0, fmt.Errorf("CountCompatibleNodes failed: %w", err)
-	}
-	return count, nil
-}
-
-func (db *DBSQLite) CountIPs(ctx context.Context) (uint, error) {
-	row := db.db.QueryRowContext(ctx, sqlCountIPs)
+func (db *DBSQLite) CountIPs(ctx context.Context, maxPingTries uint) (uint, error) {
+	row := db.db.QueryRowContext(ctx, sqlCountIPs, maxPingTries)
 	var count uint
 	if err := row.Scan(&count); err != nil {
 		return 0, fmt.Errorf("CountIPs failed: %w", err)
@@ -685,8 +678,8 @@ func (db *DBSQLite) CountIPs(ctx context.Context) (uint, error) {
 	return count, nil
 }
 
-func (db *DBSQLite) EnumerateClientIDs(ctx context.Context, enumFunc func(clientID *string)) error {
-	cursor, err := db.db.QueryContext(ctx, sqlEnumerateClientIDs)
+func (db *DBSQLite) EnumerateClientIDs(ctx context.Context, maxPingTries uint, enumFunc func(clientID *string)) error {
+	cursor, err := db.db.QueryContext(ctx, sqlEnumerateClientIDs, maxPingTries)
 	if err != nil {
 		return fmt.Errorf("EnumerateClientIDs failed to query: %w", err)
 	}

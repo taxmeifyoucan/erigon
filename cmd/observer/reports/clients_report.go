@@ -17,13 +17,11 @@ type ClientsReport struct {
 	Clients []ClientsReportEntry
 }
 
-func CreateClientsReport(ctx context.Context, db database.DB, limit uint) (*ClientsReport, error) {
+func CreateClientsReport(ctx context.Context, db database.DB, limit uint, maxPingTries uint) (*ClientsReport, error) {
 	groups := make(map[string]uint)
-	knownCount := uint(0)
 	unknownCount := uint(0)
 	enumFunc := func(clientID *string) {
 		if clientID != nil {
-			knownCount++
 			if observer.IsClientIDBlacklisted(*clientID) {
 				return
 			}
@@ -33,7 +31,7 @@ func CreateClientsReport(ctx context.Context, db database.DB, limit uint) (*Clie
 			unknownCount++
 		}
 	}
-	if err := db.EnumerateClientIDs(ctx, enumFunc); err != nil {
+	if err := db.EnumerateClientIDs(ctx, maxPingTries, enumFunc); err != nil {
 		return nil, err
 	}
 
@@ -59,7 +57,6 @@ func CreateClientsReport(ctx context.Context, db database.DB, limit uint) (*Clie
 	report.Clients = append(report.Clients,
 		ClientsReportEntry{"...", othersCount},
 		ClientsReportEntry{"total", totalCount},
-		ClientsReportEntry{"known", knownCount},
 		ClientsReportEntry{"unknown", unknownCount})
 
 	return &report, nil

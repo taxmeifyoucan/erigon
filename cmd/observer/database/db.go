@@ -56,8 +56,7 @@ type DB interface {
 
 	IsConflictError(err error) bool
 
-	CountNodes(ctx context.Context) (uint, error)
-	CountCompatibleNodes(ctx context.Context) (uint, error)
-	CountIPs(ctx context.Context) (uint, error)
-	EnumerateClientIDs(ctx context.Context, enumFunc func(clientID *string)) error
+	CountNodes(ctx context.Context, maxPingTries uint) (uint, error)
+	CountIPs(ctx context.Context, maxPingTries uint) (uint, error)
+	EnumerateClientIDs(ctx context.Context, maxPingTries uint, enumFunc func(clientID *string)) error
 }
